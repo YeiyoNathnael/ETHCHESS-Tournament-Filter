@@ -1,0 +1,267 @@
+import type { Participant, QualificationRules } from '~/types/tournament';
+import { fetchChessComUserStats, fetchLichessUserStats } from './chessApi';
+
+/**
+ * Calculates full months elapsed from a given ISO date string to today.
+ * Returns null if the date is missing/invalid — callers skip the age check in that case.
+ */
+function monthsFromDate(isoDate: string | null | undefined): number | null {
+  if (!isoDate) return null;
+  const joinedMs = new Date(isoDate).getTime();
+  if (isNaN(joinedMs) || joinedMs <= 0) return null;
+  const diffMs = Date.now() - joinedMs;
+  if (diffMs <= 0) return 0;
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30.4375));
+}
+
+/**
+ * Evaluates a participant against tournament qualification rules.
+ *
+ * Exact Flow:
+ * 1. Check account existence for both platforms.
+ * 2. If BOTH exist & are verified -> do DUAL-PLATFORM check (AND ratings, OR activity).
+ * 3. If ONLY ONE exists -> do SINGLE-PLATFORM check on existing account + add statement that the other didn't exist.
+ * 4. If NEITHER exists -> REJECTED.
+ */
+export function evaluateParticipant(
+  participant: Participant,
+  rules: QualificationRules
+): Participant {
+  const rejectionReasons: string[] = [];
+
+  const safeRules = rules || ({} as any);
+  const rawChess = safeRules.chessCom || {};
+  const rawLichess = safeRules.lichess || {};
+
+  // Extract platform-specific rules with bulletproof fallbacks
+  const chessRules = {
+    maxRating: rawChess.maxRating ?? (safeRules as any).chessComMaxRating ?? 1500,
+    maxPeakRating: rawChess.maxPeakRating ?? (safeRules as any).chessComMaxPeak ?? 1600,
+    minGamesPlayed: rawChess.minGamesPlayed ?? (safeRules as any).chessComMinGames ?? 30,
+    minAccountAgeMonths:
+      rawChess.minAccountAgeMonths ??
+      (rawChess.minAccountAgeDays ? Math.round(rawChess.minAccountAgeDays / 30.4375) : undefined) ??
+      (safeRules as any).chessComMinAgeMonths ??
+      3,
+  };
+
+  const lichessRules = {
+    maxRating: rawLichess.maxRating ?? (safeRules as any).lichessMaxRating ?? 1500,
+    maxPeakRating: rawLichess.maxPeakRating ?? (safeRules as any).lichessMaxPeak ?? 1600,
+    minGamesPlayed: rawLichess.minGamesPlayed ?? (safeRules as any).lichessMinGames ?? 30,
+    minAccountAgeMonths:
+      rawLichess.minAccountAgeMonths ??
+      (rawLichess.minAccountAgeDays ? Math.round(rawLichess.minAccountAgeDays / 30.4375) : undefined) ??
+      (safeRules as any).lichessMinAgeMonths ??
+      3,
+  };
+
+  const hasChessComHandle = !!participant.chessComUsername;
+  const hasLichessHandle = !!participant.lichessUsername;
+
+  // We consider an account verified if its rating is populated (or explicitly verified)
+  const isChessComVerified = hasChessComHandle && (participant.chessComRating !== null || participant.chessComGamesCount! > 0);
+  const isLichessVerified = hasLichessHandle && (participant.lichessRating !== null || participant.lichessGamesCount! > 0);
+
+  // Immediate ToS / Fair Play bans
+  if (participant.lichessTosViolation) {
+    rejectionReasons.push('Lichess Terms of Service (ToS) Violation detected (account flagged by Lichess engine)');
+    return { ...participant, rejectionReasons, verdict: 'REJECTED' };
+  }
+  if (participant.chessComClosed) {
+    rejectionReasons.push('Chess.com account closed or flagged for Fair Play violation');
+    return { ...participant, rejectionReasons, verdict: 'REJECTED' };
+  }
+
+  let evaluationFailed = false;
+
+  // ─── SCENARIO 1: BOTH ACCOUNTS EXIST ───────────────────────────────────────
+  if (isChessComVerified && isLichessVerified) {
+    // RATINGS: AND — both must pass
+    if (participant.chessComRating !== null && participant.chessComRating !== undefined) {
+      if (participant.chessComRating > chessRules.maxRating) {
+        rejectionReasons.push(
+          `Chess.com rating (${participant.chessComRating}) exceeds limit of ${chessRules.maxRating}`
+        );
+        evaluationFailed = true;
+      }
+    }
+    if (participant.chessComPeakRating !== null && participant.chessComPeakRating !== undefined) {
+      if (participant.chessComPeakRating > chessRules.maxPeakRating) {
+        rejectionReasons.push(
+          `Chess.com peak rating (${participant.chessComPeakRating}) exceeds peak limit of ${chessRules.maxPeakRating}`
+        );
+        evaluationFailed = true;
+      }
+    }
+    if (participant.lichessRating !== null && participant.lichessRating !== undefined) {
+      if (participant.lichessRating > lichessRules.maxRating) {
+        rejectionReasons.push(
+          `Lichess rating (${participant.lichessRating}) exceeds limit of ${lichessRules.maxRating}`
+        );
+        evaluationFailed = true;
+      }
+    }
+    if (participant.lichessPeakRating !== null && participant.lichessPeakRating !== undefined) {
+      if (participant.lichessPeakRating > lichessRules.maxPeakRating) {
+        rejectionReasons.push(
+          `Lichess peak rating (${participant.lichessPeakRating}) exceeds peak limit of ${lichessRules.maxPeakRating}`
+        );
+        evaluationFailed = true;
+      }
+    }
+
+    // ACTIVITY: OR — at least ONE platform passes (games AND age both pass for that platform)
+    const chessComAgeMonths = monthsFromDate(participant.chessComJoinedAt);
+    const lichessAgeMonths = monthsFromDate(participant.lichessJoinedAt);
+
+    const chessComAgePass = chessComAgeMonths === null || chessComAgeMonths >= chessRules.minAccountAgeMonths;
+    const lichessAgePass = lichessAgeMonths === null || lichessAgeMonths >= lichessRules.minAccountAgeMonths;
+
+    const chessComActivityPass =
+      (participant.chessComGamesCount ?? 0) >= chessRules.minGamesPlayed && chessComAgePass;
+
+    const lichessActivityPass =
+      (participant.lichessGamesCount ?? 0) >= lichessRules.minGamesPlayed && lichessAgePass;
+
+    if (!chessComActivityPass && !lichessActivityPass) {
+      const chessAgeStr = chessComAgeMonths !== null ? `${chessComAgeMonths}/${chessRules.minAccountAgeMonths} months` : 'age unknown';
+      const lichessAgeStr = lichessAgeMonths !== null ? `${lichessAgeMonths}/${lichessRules.minAccountAgeMonths} months` : 'age unknown';
+      rejectionReasons.push(
+        `Activity requirement not met: Neither platform meets minimum activity. ` +
+        `Chess.com: ${participant.chessComGamesCount ?? 0}/${chessRules.minGamesPlayed} games, ${chessAgeStr}. ` +
+        `Lichess: ${participant.lichessGamesCount ?? 0}/${lichessRules.minGamesPlayed} games, ${lichessAgeStr}.`
+      );
+      evaluationFailed = true;
+    }
+  }
+
+  // ─── SCENARIO 2: ONLY CHESS.COM EXISTS ─────────────────────────────────────
+  else if (isChessComVerified) {
+    if (hasLichessHandle && !isLichessVerified) {
+      rejectionReasons.push(`Note: Lichess account '${participant.lichessUsername}' does not exist or could not be verified.`);
+    }
+
+    if (participant.chessComRating !== null && participant.chessComRating !== undefined) {
+      if (participant.chessComRating > chessRules.maxRating) {
+        rejectionReasons.push(
+          `Chess.com rating (${participant.chessComRating}) exceeds limit of ${chessRules.maxRating}`
+        );
+        evaluationFailed = true;
+      }
+    }
+    if (participant.chessComPeakRating !== null && participant.chessComPeakRating !== undefined) {
+      if (participant.chessComPeakRating > chessRules.maxPeakRating) {
+        rejectionReasons.push(
+          `Chess.com peak rating (${participant.chessComPeakRating}) exceeds peak limit of ${chessRules.maxPeakRating}`
+        );
+        evaluationFailed = true;
+      }
+    }
+    if ((participant.chessComGamesCount ?? 0) < chessRules.minGamesPlayed) {
+      rejectionReasons.push(
+        `Chess.com games (${participant.chessComGamesCount ?? 0}/${chessRules.minGamesPlayed}) below minimum`
+      );
+      evaluationFailed = true;
+    }
+    const chessComAgeMonths = monthsFromDate(participant.chessComJoinedAt);
+    if (chessComAgeMonths !== null && chessComAgeMonths < chessRules.minAccountAgeMonths) {
+      rejectionReasons.push(
+        `Chess.com account age (${chessComAgeMonths}/${chessRules.minAccountAgeMonths} months) below minimum`
+      );
+      evaluationFailed = true;
+    }
+  }
+
+  // ─── SCENARIO 3: ONLY LICHESS EXISTS ───────────────────────────────────────
+  else if (isLichessVerified) {
+    if (hasChessComHandle && !isChessComVerified) {
+      rejectionReasons.push(`Note: Chess.com account '${participant.chessComUsername}' does not exist or could not be verified.`);
+    }
+
+    if (participant.lichessRating !== null && participant.lichessRating !== undefined) {
+      if (participant.lichessRating > lichessRules.maxRating) {
+        rejectionReasons.push(
+          `Lichess rating (${participant.lichessRating}) exceeds limit of ${lichessRules.maxRating}`
+        );
+        evaluationFailed = true;
+      }
+    }
+    if (participant.lichessPeakRating !== null && participant.lichessPeakRating !== undefined) {
+      if (participant.lichessPeakRating > lichessRules.maxPeakRating) {
+        rejectionReasons.push(
+          `Lichess peak rating (${participant.lichessPeakRating}) exceeds peak limit of ${lichessRules.maxPeakRating}`
+        );
+        evaluationFailed = true;
+      }
+    }
+    if ((participant.lichessGamesCount ?? 0) < lichessRules.minGamesPlayed) {
+      rejectionReasons.push(
+        `Lichess games (${participant.lichessGamesCount ?? 0}/${lichessRules.minGamesPlayed}) below minimum`
+      );
+      evaluationFailed = true;
+    }
+    const lichessAgeMonths = monthsFromDate(participant.lichessJoinedAt);
+    if (lichessAgeMonths !== null && lichessAgeMonths < lichessRules.minAccountAgeMonths) {
+      rejectionReasons.push(
+        `Lichess account age (${lichessAgeMonths}/${lichessRules.minAccountAgeMonths} months) below minimum`
+      );
+      evaluationFailed = true;
+    }
+  }
+
+  // ─── SCENARIO 4: NEITHER ACCOUNT EXISTS OR IS VERIFIED ────────────────────
+  else {
+    if (hasChessComHandle) {
+      rejectionReasons.push(`Chess.com account '${participant.chessComUsername}' does not exist or could not be verified.`);
+    }
+    if (hasLichessHandle) {
+      rejectionReasons.push(`Lichess account '${participant.lichessUsername}' does not exist or could not be verified.`);
+    }
+    if (!hasChessComHandle && !hasLichessHandle) {
+      rejectionReasons.push('No Chess.com or Lichess handle was provided.');
+    }
+    evaluationFailed = true;
+  }
+
+  const verdict = evaluationFailed ? 'REJECTED' : 'ELIGIBLE';
+  return { ...participant, rejectionReasons, verdict };
+}
+
+/**
+ * Fetches live stats from Chess.com & Lichess, then evaluates the participant.
+ * All eligibility screening is strictly based on Rapid format ratings.
+ */
+export async function verifyParticipantLive(
+  participant: Participant,
+  rules: QualificationRules,
+  timeFormat: string = 'rapid'
+): Promise<Participant> {
+  let updated = { ...participant };
+  const screeningFormat = 'rapid';
+
+  if (participant.lichessUsername) {
+    const stats = await fetchLichessUserStats(participant.lichessUsername, screeningFormat);
+    if (stats.verified) {
+      updated.lichessRating = stats.currentRating;
+      updated.lichessPeakRating = stats.peakRating;
+      updated.lichessGamesCount = stats.gamesCount;
+      updated.lichessJoinedAt = stats.joinedAt;
+      updated.lichessTosViolation = stats.tosViolation;
+    }
+  }
+
+  if (participant.chessComUsername) {
+    const stats = await fetchChessComUserStats(participant.chessComUsername, screeningFormat);
+    if (stats.verified) {
+      updated.chessComRating = stats.currentRating;
+      updated.chessComPeakRating = stats.peakRating;
+      updated.chessComGamesCount = stats.gamesCount;
+      updated.chessComJoinedAt = stats.joinedAt;
+      updated.chessComClosed = stats.isClosed;
+    }
+  }
+
+  updated.verifiedAt = new Date().toISOString();
+  return evaluateParticipant(updated, rules);
+}

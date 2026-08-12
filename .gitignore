@@ -1,0 +1,50 @@
+# Nuxt dev/build outputs
+.nuxt/
+.output/
+.data/
+dist/
+
+# Node dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Testing / coverage
+coverage/
+*.lcov
+
+# Cache
+.cache/
+.eslintcache
+.npm/
+.pnpm-store/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Local database (if using SQLite etc.)
+*.sqlite
+
+# Vercel/Netlify (if deploying there)
+.vercel
+.netlify
