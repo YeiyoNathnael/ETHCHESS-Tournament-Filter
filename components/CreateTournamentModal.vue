@@ -99,36 +99,45 @@
               />
             </div>
 
-            <!-- Cover Image Upload & Presets -->
+            <!-- Cover Image Upload -->
             <div class="form-group">
-              <label class="form-label">Tournament Cover Image</label>
-              <div class="image-upload-box">
+              <label class="form-label">Cover Image</label>
+
+              <!-- Upload Zone -->
+              <div
+                class="image-upload-zone"
+                :class="{ dragging: isDraggingImage, 'has-image': form.coverImage }"
+                @dragover.prevent="isDraggingImage = true"
+                @dragleave.prevent="isDraggingImage = false"
+                @drop.prevent="handleImageDrop"
+                @click="() => (imageInputRef as HTMLInputElement)?.click()"
+              >
                 <input
+                  ref="imageInputRef"
                   type="file"
-                  ref="imageFileInputRef"
                   accept="image/*"
-                  style="display: none"
+                  class="hidden-file-input"
                   @change="handleImageFileSelect"
                 />
-                <div class="upload-action-row">
-                  <button
-                    type="button"
-                    class="btn btn-outline btn-sm btn-upload-image"
-                    @click="imageFileInputRef?.click()"
-                  >
-                    <Upload :size="15" />
-                    <span>Upload Custom Image File</span>
-                  </button>
-                  <span class="or-separator">or paste URL:</span>
+                <div v-if="isUploadingImage" class="upload-state uploading">
+                  <div class="upload-spinner"></div>
+                  <span>Uploading image...</span>
                 </div>
-                <input
-                  v-model="form.coverImage"
-                  type="text"
-                  class="form-input mt-1"
-                  placeholder="https://... or uploaded image data URL"
-                />
+                <template v-else-if="form.coverImage">
+                  <img :src="form.coverImage" class="upload-preview" alt="Cover preview" />
+                  <div class="upload-overlay-change">
+                    <UploadCloud :size="20" />
+                    <span>Click or drop to change</span>
+                  </div>
+                </template>
+                <div v-else class="upload-state empty">
+                  <UploadCloud :size="32" class="upload-icon" />
+                  <div class="upload-hint-title">Drop image here or click to upload</div>
+                  <div class="upload-hint-sub">PNG, JPG, WEBP — max 5MB</div>
+                </div>
               </div>
 
+              <!-- Preset Themes -->
               <div class="preset-label">Or choose a preset theme:</div>
               <div class="preset-images">
                 <button
@@ -331,7 +340,7 @@ import { ref, reactive } from 'vue';
 import type { TimeControl, QualificationRules } from '~/types/tournament';
 import { useTournaments } from '~/composables/useTournaments';
 import { useToast } from '~/composables/useToast';
-import { Trophy, X, Sparkles, ShieldCheck, Zap, Flame, Upload, Plus } from 'lucide-vue-next';
+import { Trophy, X, Sparkles, Clock, Zap, Flame, ShieldCheck, Plus, UploadCloud } from 'lucide-vue-next';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -346,21 +355,39 @@ const { createTournament } = useTournaments();
 const { addToast } = useToast();
 
 const ruleTab = ref<'chessCom' | 'lichess'>('chessCom');
-const imageFileInputRef = ref<HTMLInputElement | null>(null);
+const isDraggingImage = ref(false);
+const isUploadingImage = ref(false);
+const imageInputRef = ref<HTMLInputElement | null>(null);
+
+async function handleImageUpload(file: File) {
+  if (!file || !file.type.startsWith('image/')) return;
+  if (file.size > 5 * 1024 * 1024) {
+    addToast('File too large', 'Please upload an image under 5MB.', 'error');
+    return;
+  }
+  isUploadingImage.value = true;
+  try {
+    const fd = new FormData();
+    fd.append('image', file, file.name);
+    const res = await $fetch<{ url: string }>('/api/upload-image', { method: 'POST', body: fd });
+    form.coverImage = res.url;
+  } catch {
+    addToast('Upload failed', 'Could not upload image. Please try again.', 'error');
+  } finally {
+    isUploadingImage.value = false;
+    isDraggingImage.value = false;
+  }
+}
+
+function handleImageDrop(e: DragEvent) {
+  isDraggingImage.value = false;
+  const file = e.dataTransfer?.files?.[0];
+  if (file) handleImageUpload(file);
+}
 
 function handleImageFileSelect(e: Event) {
-  const target = e.target as HTMLInputElement;
-  if (target.files && target.files[0]) {
-    const file = target.files[0];
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        form.coverImage = event.target.result as string;
-        addToast('Custom Image Loaded', `Cover image set from ${file.name}`, 'success');
-      }
-    };
-    reader.readAsDataURL(file);
-  }
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (file) handleImageUpload(file);
 }
 
 const imagePresets = [
@@ -413,7 +440,7 @@ function closeModal() {
   emit('close');
 }
 
-function handleSubmit() {
+async function handleSubmit() {
   if (!form.title.trim()) return;
 
   const finalRules: QualificationRules = {
@@ -429,7 +456,7 @@ function handleSubmit() {
     lichessMinAgeMonths: Math.round(form.rules.lichess.minAccountAgeDays / 30.4375) || 3,
   };
 
-  const tourney = createTournament({
+  const tourney = await createTournament({
     title: form.title,
     description: form.description,
     date: form.date,
@@ -736,5 +763,110 @@ function handleSubmit() {
     transform: scale(1);
     opacity: 1;
   }
+}
+
+/* ── Image Upload Zone ── */
+.hidden-file-input {
+  display: none;
+}
+
+.image-upload-zone {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  border: 2px dashed var(--color-cream-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.2s, background 0.2s;
+  background: var(--color-cream-alt, #f4f0eb);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-upload-zone:hover,
+.image-upload-zone.dragging {
+  border-color: var(--color-jade-deep);
+  background: color-mix(in srgb, var(--color-jade-deep) 6%, transparent);
+}
+
+.image-upload-zone.has-image {
+  border-style: solid;
+  border-color: var(--color-jade-deep);
+}
+
+.upload-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: absolute;
+  inset: 0;
+}
+
+.upload-overlay-change {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.image-upload-zone:hover .upload-overlay-change {
+  opacity: 1;
+}
+
+.upload-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  padding: 1rem;
+}
+
+.upload-state.empty .upload-icon {
+  color: var(--color-jade-deep);
+  opacity: 0.6;
+}
+
+.upload-hint-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-main, #1a1a1a);
+}
+
+.upload-hint-sub {
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #888);
+}
+
+.upload-state.uploading {
+  gap: 0.75rem;
+  color: var(--color-jade-deep);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.upload-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid color-mix(in srgb, var(--color-jade-deep) 20%, transparent);
+  border-top-color: var(--color-jade-deep);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

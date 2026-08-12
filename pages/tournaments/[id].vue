@@ -128,6 +128,7 @@
                 <th>Chess.com Inspection</th>
                 <th>Lichess Inspection</th>
                 <th>Verified Rating</th>
+                <th>Trust Index</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -177,6 +178,12 @@
                   </div>
                 </td>
                 <td>
+                  <span v-if="p.trustScore !== undefined && p.trustScore !== null" class="trust-score-public-badge" :class="getTrustBadgeClass(p.trustScore)" :title="p.trustDetails?.explanation || 'ETHCHESS Statistical Trust Score'">
+                    <Gauge :size="12" /> {{ p.trustScore }}/100
+                  </span>
+                  <span v-else class="text-muted">—</span>
+                </td>
+                <td>
                   <span class="badge badge-eligible">
                     <CheckCircle2 :size="14" /> Confirmed Approved
                   </span>
@@ -204,6 +211,7 @@ import {
   Loader2,
   AlertCircle,
   Trophy,
+  Gauge,
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -247,8 +255,17 @@ const lichessRules = computed(() => {
 });
 
 const approvedParticipants = computed(() => {
-  return getParticipants(tournamentId).filter((p) => p.status === 'APPROVED');
+  return getParticipants(tournamentId).filter((p) => p.status === 'APPROVED' || p.verdict === 'ELIGIBLE');
 });
+
+function getTrustBadgeClass(score?: number) {
+  if (score === undefined || score === null) return 'trust-na';
+  if (score >= 90) return 'trust-excellent';
+  if (score >= 70) return 'trust-good';
+  if (score >= 50) return 'trust-borderline';
+  if (score >= 30) return 'trust-poor';
+  return 'trust-reject';
+}
 </script>
 
 <style scoped>
@@ -519,5 +536,46 @@ const approvedParticipants = computed(() => {
   font-size: 0.75rem;
   padding: 0.15rem 0.5rem;
   border-radius: 4px;
+}
+
+.trust-score-public-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+}
+
+.trust-score-public-badge.trust-excellent {
+  background: #E6F7F0;
+  color: #0E7B4E;
+  border-color: #A2E2C7;
+}
+
+.trust-score-public-badge.trust-good {
+  background: #EBF5FF;
+  color: #1D4ED8;
+  border-color: #BFDBFE;
+}
+
+.trust-score-public-badge.trust-borderline {
+  background: #FEF3C7;
+  color: #D97706;
+  border-color: #FDE68A;
+}
+
+.trust-score-public-badge.trust-poor {
+  background: #FFEDD5;
+  color: #C2410C;
+  border-color: #FDBA74;
+}
+
+.trust-score-public-badge.trust-reject {
+  background: #FDE8E6;
+  color: #C82A2A;
+  border-color: #F87171;
 }
 </style>

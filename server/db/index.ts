@@ -2,14 +2,37 @@ import { createClient } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
 import * as schema from './schema';
 
-const url = process.env.TURSO_DATABASE_URL || 'file:local.db';
-const authToken = process.env.TURSO_AUTH_TOKEN;
+function getDatabaseConfig() {
+  let dbUrl = process.env.TURSO_DATABASE_URL || process.env.NUXT_TURSO_DATABASE_URL;
+  let dbToken = process.env.TURSO_AUTH_TOKEN || process.env.NUXT_TURSO_AUTH_TOKEN;
 
-export const client = createClient({
-  url,
-  authToken,
-});
+  // Try reading Nuxt runtimeConfig if inside Nitro request or server context
+  try {
+    const config = useRuntimeConfig();
+    if (config?.tursoDatabaseUrl && config.tursoDatabaseUrl !== 'file:local.db') {
+      dbUrl = config.tursoDatabaseUrl;
+    }
+    if (config?.tursoAuthToken) {
+      dbToken = config.tursoAuthToken;
+    }
+  } catch {
+    // Outside Nitro context (e.g. CLI or standalone test)
+  }
 
+  const finalUrl = dbUrl && dbUrl.trim() ? dbUrl.trim() : 'file:local.db';
+  const finalToken = dbToken && dbToken.trim() ? dbToken.trim() : undefined;
+
+  return { url: finalUrl, authToken: finalToken };
+}
+
+const dbConfig = getDatabaseConfig();
+if (dbConfig.authToken) {
+  console.log(`[DB] Connected to Turso Remote Cloud Database: ${dbConfig.url}`);
+} else {
+  console.log(`[DB] Connected to SQLite Local Database: ${dbConfig.url}`);
+}
+
+export const client = createClient(dbConfig);
 export const db = drizzle(client, { schema });
 
 // Ensure database tables exist automatically
@@ -66,6 +89,21 @@ export async function ensureTablesExist() {
           submitted_at TEXT
         );
       `);
+
+      // Safe column migration checks for existing SQLite/Turso tables
+      const alters = [
+        "ALTER TABLE participants ADD COLUMN chess_com_joined_at TEXT;",
+        "ALTER TABLE participants ADD COLUMN chess_com_closed INTEGER NOT NULL DEFAULT 0;",
+        "ALTER TABLE participants ADD COLUMN lichess_joined_at TEXT;",
+        "ALTER TABLE participants ADD COLUMN lichess_tos_violation INTEGER NOT NULL DEFAULT 0;",
+      ];
+      for (const q of alters) {
+        try {
+          await client.execute(q);
+        } catch {
+          // Column already exists, ignore
+        }
+      }
     })().catch((err) => {
       initPromise = null;
       console.error('Failed to initialize database tables:', err);

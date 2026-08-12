@@ -133,6 +133,17 @@ export function useTournaments() {
     return participantsMap.value[tournamentId] || [];
   };
 
+  const fetchAllTournaments = async () => {
+    try {
+      const res = await $fetch<{ success: boolean; tournaments: any[] }>('/api/tournaments');
+      if (res && res.success && Array.isArray(res.tournaments)) {
+        tournaments.value = res.tournaments.map(mapDbTournamentToFrontend);
+      }
+    } catch (err) {
+      console.warn('Could not fetch tournaments from database:', err);
+    }
+  };
+
   const fetchTournamentDetails = async (id: string) => {
     try {
       const res = await $fetch<{
@@ -163,16 +174,52 @@ export function useTournaments() {
     }
   };
 
-  const createTournament = (newTourney: Omit<Tournament, 'id' | 'createdAt'>): Tournament => {
-    const id = `ethchess-${newTourney.timeControl.toLowerCase()}-${Date.now().toString(36)}`;
-    const tournament: Tournament = {
+  // Automatically fetch tournaments from database on client mount
+  if (typeof window !== 'undefined' && tournaments.value.length === 0) {
+    fetchAllTournaments();
+  }
+
+  const createTournament = async (newTourney: Omit<Tournament, 'id' | 'createdAt'>): Promise<Tournament> => {
+    try {
+      const res = await $fetch<{ success: boolean; tournament: any }>('/api/tournaments', {
+        method: 'POST',
+        body: {
+          title: newTourney.title,
+          description: newTourney.description,
+          imageUrl: newTourney.coverImage,
+          eventDate: newTourney.date,
+          location: newTourney.location,
+          timeFormat: newTourney.timeControl.toLowerCase(),
+          chessComMaxRating: newTourney.rules.chessCom?.maxRating ?? 1500,
+          chessComMaxPeak: newTourney.rules.chessCom?.maxPeakRating ?? 1600,
+          chessComMinGames: newTourney.rules.chessCom?.minGamesPlayed ?? 30,
+          chessComMinAgeMonths: newTourney.rules.chessCom?.minAccountAgeMonths ?? 3,
+          lichessMaxRating: newTourney.rules.lichess?.maxRating ?? 1500,
+          lichessMaxPeak: newTourney.rules.lichess?.maxPeakRating ?? 1600,
+          lichessMinGames: newTourney.rules.lichess?.minGamesPlayed ?? 30,
+          lichessMinAgeMonths: newTourney.rules.lichess?.minAccountAgeMonths ?? 3,
+        },
+      });
+
+      if (res && res.success && res.tournament) {
+        const created = mapDbTournamentToFrontend(res.tournament);
+        tournaments.value.unshift(created);
+        participantsMap.value[created.id] = [];
+        return created;
+      }
+    } catch (err) {
+      console.error('Failed to persist tournament to database:', err);
+    }
+
+    const fallbackId = `ethchess-${newTourney.timeControl.toLowerCase()}-${Date.now().toString(36)}`;
+    const fallback: Tournament = {
       ...newTourney,
-      id,
+      id: fallbackId,
       createdAt: new Date().toISOString(),
     };
-    tournaments.value.unshift(tournament);
-    participantsMap.value[id] = [];
-    return tournament;
+    tournaments.value.unshift(fallback);
+    participantsMap.value[fallbackId] = [];
+    return fallback;
   };
 
   const deleteTournament = async (id: string) => {
@@ -254,18 +301,33 @@ export function useTournaments() {
     }
   };
 
-  const loadDefaultCsvData = (tournamentId: string, rawCsvText?: string): Participant[] => {
+  const processCsvFile = async (tournamentId: string, csvText: string): Promise<Participant[]> => {
+    if (!isNaN(Number(tournamentId))) {
+      try {
+        const res = await $fetch<{ success: boolean; participants: any[] }>(`/api/tournaments/${tournamentId}/process-csv`, {
+          method: 'POST',
+          body: { csvContent: csvText },
+        });
+        if (res && res.success && Array.isArray(res.participants)) {
+          const mapped = res.participants.map(mapDbParticipantToFrontend);
+          participantsMap.value[tournamentId] = mapped;
+          return mapped;
+        }
+      } catch (err) {
+        console.warn(`Server process-csv API call failed for tournament ${tournamentId}:`, err);
+      }
+    }
+
     const tourney = getTournament(tournamentId);
-    const rules = tourney?.rules || defaultRules;
-    const timeControl = tourney?.timeControl || 'Rapid';
-    const csvContent = rawCsvText || defaultCSVRaw;
-    const parsed = parseCsvContent(csvContent, tournamentId, rules, timeControl);
+    const parsed = parseCsvContent(csvText, tournamentId, tourney?.rules || defaultRules, tourney?.timeControl || 'Rapid');
     participantsMap.value[tournamentId] = parsed;
-
-    // Trigger background live verification for the exact time control!
     verifyAllParticipants(tournamentId);
-
     return parsed;
+  };
+
+  const loadDefaultCsvData = async (tournamentId: string, rawCsvText?: string): Promise<Participant[]> => {
+    const csvContent = rawCsvText || defaultCSVRaw;
+    return await processCsvFile(tournamentId, csvContent);
   };
 
   const verifyAllParticipants = async (
@@ -310,11 +372,13 @@ export function useTournaments() {
     tournaments: allTournaments,
     getTournament,
     getParticipants,
+    fetchAllTournaments,
     fetchTournamentDetails,
     createTournament,
     deleteTournament,
     updateTournamentRules,
     setParticipants,
+    processCsvFile,
     toggleManualOverride,
     updateParticipantStatus,
     loadDefaultCsvData,

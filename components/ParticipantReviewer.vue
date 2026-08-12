@@ -108,6 +108,7 @@
             <th>#</th>
             <th>Participant Telegram</th>
             <th>Platform Handles</th>
+            <th>Trust Score</th>
             <th>System Verdict</th>
             <th>Status & Override</th>
             <th class="text-right">Actions</th>
@@ -175,6 +176,26 @@
                 </a>
                 <span v-else class="no-handle-badge">Lichess: —</span>
               </div>
+            </td>
+
+            <!-- Trust Score Column -->
+            <td class="col-trust" @click.stop>
+              <div
+                v-if="p.trustScore !== undefined && p.trustScore !== null"
+                class="trust-pill-wrap"
+                :title="p.trustDetails?.explanation || 'Click row for full statistical breakdown'"
+                @click="openDetailModal(p)"
+              >
+                <span class="trust-score-badge" :class="getTrustBadgeClass(p.trustScore)">
+                  <Gauge :size="12" />
+                  <span class="score-num">{{ p.trustScore }}</span>
+                  <span class="score-denom">/100</span>
+                </span>
+                <span class="trust-band-tag" :class="getTrustBadgeClass(p.trustScore)">
+                  {{ p.trustDetails?.verdictBand || getTrustBandLabel(p.trustScore) }}
+                </span>
+              </div>
+              <span v-else class="text-muted text-xs">—</span>
             </td>
 
             <!-- System Verdict Badge -->
@@ -278,6 +299,49 @@
                   <span v-if="selectedParticipant.verdict === 'ELIGIBLE'">Participant meets all tournament qualification criteria.</span>
                   <span v-else-if="selectedParticipant.manualOverride">Organizer manually force-approved candidate despite failing automated rules.</span>
                   <span v-else>Participant failed automated qualification requirements.</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Trust Score Breakdown Card in Modal -->
+            <div v-if="selectedParticipant.trustDetails || selectedParticipant.trustScore !== undefined" class="trust-score-card">
+              <div class="trust-card-top">
+                <div class="trust-dial" :class="getTrustBadgeClass(selectedParticipant.trustScore ?? 0)">
+                  <span class="dial-score">{{ selectedParticipant.trustScore ?? 0 }}</span>
+                  <span class="dial-max">/100</span>
+                </div>
+                <div class="trust-top-info">
+                  <div class="trust-title-line">
+                    <Gauge :size="18" class="icon-jade" />
+                    <span class="t-title">Statistical Trust Score</span>
+                    <span class="t-band-badge" :class="getTrustBadgeClass(selectedParticipant.trustScore ?? 0)">
+                      {{ selectedParticipant.trustDetails?.verdictBand || getTrustBandLabel(selectedParticipant.trustScore) }}
+                    </span>
+                  </div>
+                  <p class="t-desc">{{ selectedParticipant.trustDetails?.explanation || 'Statistical probability true strength ≤ limit.' }}</p>
+                </div>
+              </div>
+
+              <div class="trust-metrics-grid">
+                <div class="t-metric">
+                  <span class="tm-lbl">Probability Rating ≤ Limit</span>
+                  <span class="tm-val">{{ selectedParticipant.trustScore ?? 0 }}%</span>
+                  <span class="tm-sub">Normal distribution CDF Φ(z)</span>
+                </div>
+                <div class="t-metric">
+                  <span class="tm-lbl">Effective Rating Used</span>
+                  <span class="tm-val">{{ selectedParticipant.trustDetails?.effectiveRating ?? '—' }} ELO</span>
+                  <span class="tm-sub">Peak weight: {{ Math.round((selectedParticipant.trustDetails?.peakWeight ?? 0) * 100) }}%</span>
+                </div>
+                <div class="t-metric">
+                  <span class="tm-lbl">Effective Uncertainty (RD)</span>
+                  <span class="tm-val">±{{ selectedParticipant.trustDetails?.effectiveRd ?? '—' }}</span>
+                  <span class="tm-sub">Game factor ×{{ selectedParticipant.trustDetails?.gameCountFactor ?? 1 }}</span>
+                </div>
+                <div class="t-metric">
+                  <span class="tm-lbl">Total Rated Games</span>
+                  <span class="tm-val">{{ selectedParticipant.trustDetails?.gamesCount ?? 0 }}</span>
+                  <span class="tm-sub">{{ (selectedParticipant.trustDetails?.gamesCount ?? 0) >= 30 ? 'Established (≥30)' : 'Provisional / Unsettled' }}</span>
                 </div>
               </div>
             </div>
@@ -427,7 +491,8 @@ import {
   ExternalLink,
   Zap,
   Eye,
-  Copy
+  Copy,
+  Gauge
 } from 'lucide-vue-next';
 import confetti from 'canvas-confetti';
 
@@ -441,6 +506,24 @@ const { addToast } = useToast();
 const searchQuery = ref('');
 const currentTab = ref<'all' | 'eligible' | 'rejected' | 'approved' | 'disapproved'>('all');
 const selectedParticipant = ref<Participant | null>(null);
+
+function getTrustBadgeClass(score?: number) {
+  if (score === undefined || score === null) return 'trust-na';
+  if (score >= 90) return 'trust-excellent';
+  if (score >= 70) return 'trust-good';
+  if (score >= 50) return 'trust-borderline';
+  if (score >= 30) return 'trust-poor';
+  return 'trust-reject';
+}
+
+function getTrustBandLabel(score?: number) {
+  if (score === undefined || score === null) return 'N/A';
+  if (score >= 90) return 'EXCELLENT';
+  if (score >= 70) return 'GOOD';
+  if (score >= 50) return 'BORDERLINE';
+  if (score >= 30) return 'POOR';
+  return 'REJECT';
+}
 
 const tourney = computed(() => getTournament(props.tournamentId));
 const timeControlLabel = computed(() => tourney.value?.timeControl || 'Format');
@@ -1104,5 +1187,189 @@ function formatTimestamp(isoStr?: string): string {
   margin-top: 1.25rem;
   padding-top: 0.85rem;
   border-top: 1px solid var(--color-cream-border);
+}
+
+/* ── Trust Score Column & Badges ── */
+.col-trust {
+  vertical-align: middle;
+}
+
+.trust-pill-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  cursor: pointer;
+}
+
+.trust-score-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 800;
+  border: 1px solid transparent;
+}
+
+.trust-score-badge.trust-excellent {
+  background: #E6F7F0;
+  color: #0E7B4E;
+  border-color: #A2E2C7;
+}
+
+.trust-score-badge.trust-good {
+  background: #EBF5FF;
+  color: #1D4ED8;
+  border-color: #BFDBFE;
+}
+
+.trust-score-badge.trust-borderline {
+  background: #FEF3C7;
+  color: #D97706;
+  border-color: #FDE68A;
+}
+
+.trust-score-badge.trust-poor {
+  background: #FFEDD5;
+  color: #C2410C;
+  border-color: #FDBA74;
+}
+
+.trust-score-badge.trust-reject {
+  background: #FDE8E6;
+  color: #C82A2A;
+  border-color: #F87171;
+}
+
+.trust-band-tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.trust-band-tag.trust-excellent { color: #0E7B4E; }
+.trust-band-tag.trust-good { color: #1D4ED8; }
+.trust-band-tag.trust-borderline { color: #D97706; }
+.trust-band-tag.trust-poor { color: #C2410C; }
+.trust-band-tag.trust-reject { color: #C82A2A; }
+
+/* ── Modal Trust Score Card ── */
+.trust-score-card {
+  background: var(--color-cream-alt, #F5F1EB);
+  border: 1px solid var(--color-cream-border, #E2DACD);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.trust-card-top {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--color-cream-border, #E2DACD);
+}
+
+.trust-dial {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid currentColor;
+  flex-shrink: 0;
+}
+
+.trust-dial.trust-excellent { background: #E6F7F0; color: #0E7B4E; }
+.trust-dial.trust-good { background: #EBF5FF; color: #1D4ED8; }
+.trust-dial.trust-borderline { background: #FEF3C7; color: #D97706; }
+.trust-dial.trust-poor { background: #FFEDD5; color: #C2410C; }
+.trust-dial.trust-reject { background: #FDE8E6; color: #C82A2A; }
+
+.dial-score {
+  font-size: 1.35rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.dial-max {
+  font-size: 0.65rem;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.trust-top-info {
+  flex: 1;
+}
+
+.trust-title-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.t-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--color-jade-deep);
+}
+
+.t-band-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-full);
+}
+
+.t-band-badge.trust-excellent { background: #E6F7F0; color: #0E7B4E; }
+.t-band-badge.trust-good { background: #EBF5FF; color: #1D4ED8; }
+.t-band-badge.trust-borderline { background: #FEF3C7; color: #D97706; }
+.t-band-badge.trust-poor { background: #FFEDD5; color: #C2410C; }
+.t-band-badge.trust-reject { background: #FDE8E6; color: #C82A2A; }
+
+.t-desc {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  line-height: 1.35;
+}
+
+.trust-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+
+.t-metric {
+  background: white;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-cream-border, #E2DACD);
+  display: flex;
+  flex-direction: column;
+}
+
+.tm-lbl {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: 0.15rem;
+}
+
+.tm-val {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--color-jade-deep);
+}
+
+.tm-sub {
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
 }
 </style>

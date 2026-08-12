@@ -1,5 +1,6 @@
 import type { Participant, QualificationRules } from '~/types/tournament';
 import { fetchChessComUserStats, fetchLichessUserStats } from './chessApi';
+import { computePlatformTrustScore } from './ruleEngine';
 
 /**
  * Calculates full months elapsed from a given ISO date string to today.
@@ -224,8 +225,41 @@ export function evaluateParticipant(
     evaluationFailed = true;
   }
 
+  // Compute Trust Score details
+  const cTrust = isChessComVerified ? computePlatformTrustScore({
+    verified: true,
+    currentRating: participant.chessComRating ?? null,
+    peakRating: participant.chessComPeakRating ?? null,
+    peakDate: participant.chessComPeakDate,
+    gamesCount: participant.chessComGamesCount ?? 0,
+    joinedAt: participant.chessComJoinedAt ?? '',
+    rawUsername: participant.chessComUsername,
+    rd: participant.chessComRd,
+    prov: participant.chessComProv,
+    lastPlayedAt: participant.chessComLastPlayedAt,
+  }, chessRules.maxRating, safeRules.peakWindowMonths ?? 24, 'chessCom') : undefined;
+
+  const lTrust = isLichessVerified ? computePlatformTrustScore({
+    verified: true,
+    currentRating: participant.lichessRating ?? null,
+    peakRating: participant.lichessPeakRating ?? null,
+    peakDate: participant.lichessPeakDate,
+    gamesCount: participant.lichessGamesCount ?? 0,
+    joinedAt: participant.lichessJoinedAt ?? '',
+    rawUsername: participant.lichessUsername,
+    rd: participant.lichessRd,
+    prov: participant.lichessProv,
+    lastPlayedAt: participant.lichessLastPlayedAt,
+  }, lichessRules.maxRating, safeRules.peakWindowMonths ?? 24, 'lichess') : undefined;
+
+  let trustDetails = lTrust || cTrust;
+  if (cTrust && lTrust) {
+    trustDetails = cTrust.score < lTrust.score ? cTrust : lTrust;
+  }
+  const trustScore = trustDetails?.score;
+
   const verdict = evaluationFailed ? 'REJECTED' : 'ELIGIBLE';
-  return { ...participant, rejectionReasons, verdict };
+  return { ...participant, rejectionReasons, verdict, trustScore, trustDetails };
 }
 
 /**
@@ -245,9 +279,13 @@ export async function verifyParticipantLive(
     if (stats.verified) {
       updated.lichessRating = stats.currentRating;
       updated.lichessPeakRating = stats.peakRating;
+      updated.lichessPeakDate = stats.peakDate;
       updated.lichessGamesCount = stats.gamesCount;
       updated.lichessJoinedAt = stats.joinedAt;
       updated.lichessTosViolation = stats.tosViolation;
+      updated.lichessRd = stats.rd;
+      updated.lichessProv = stats.prov;
+      updated.lichessLastPlayedAt = stats.lastPlayedAt;
     }
   }
 
@@ -256,9 +294,13 @@ export async function verifyParticipantLive(
     if (stats.verified) {
       updated.chessComRating = stats.currentRating;
       updated.chessComPeakRating = stats.peakRating;
+      updated.chessComPeakDate = stats.peakDate;
       updated.chessComGamesCount = stats.gamesCount;
       updated.chessComJoinedAt = stats.joinedAt;
       updated.chessComClosed = stats.isClosed;
+      updated.chessComRd = stats.rd;
+      updated.chessComProv = stats.prov;
+      updated.chessComLastPlayedAt = stats.lastPlayedAt;
     }
   }
 
