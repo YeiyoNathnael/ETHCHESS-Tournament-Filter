@@ -1,0 +1,234 @@
+export interface PlatformUserStats {
+  verified: boolean;
+  currentRating: number | null;
+  peakRating: number | null;
+  gamesCount: number;
+  joinedAt: string; // ISO date string — age is calculated from this to today at evaluation time
+  rawUsername: string;
+  tosViolation?: boolean;
+  isClosed?: boolean;
+}
+
+const HTTP_HEADERS = {
+  'User-Agent': 'ETHCHESS-TourneyFilter/1.0 (contact@ethchess.org; +https://ethchess.org)',
+  Accept: 'application/json',
+};
+
+/**
+ * Fetches user profile and game statistics from Chess.com public API.
+ * Returns joinedAt as ISO date string. Age in months is calculated externally.
+ */
+export async function fetchChessComUserStats(
+  username: string,
+  timeFormat: string = 'rapid'
+): Promise<PlatformUserStats> {
+  const defaultResult: PlatformUserStats = {
+    verified: false,
+    currentRating: null,
+    peakRating: null,
+    gamesCount: 0,
+    joinedAt: '',
+    rawUsername: username,
+  };
+
+  if (!username) return defaultResult;
+
+  // If executing in browser, proxy through Nuxt API endpoint to bypass CORS
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch(`/api/verify-participant?username=${encodeURIComponent(username.trim())}&platform=chessCom&timeFormat=${encodeURIComponent(timeFormat)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.stats) return data.stats;
+      }
+    } catch {
+      // Fall through to direct fetch if proxy fails
+    }
+  }
+
+  try {
+    const cleanUser = encodeURIComponent(username.trim().toLowerCase());
+    const normFormat = (timeFormat || 'rapid').toLowerCase();
+
+    // Fetch profile
+    const profileRes = await fetch(`https://api.chess.com/pub/player/${cleanUser}`, {
+      headers: HTTP_HEADERS,
+    });
+
+    if (!profileRes.ok) {
+      return defaultResult;
+    }
+
+    const profileData = await profileRes.json();
+
+    // Chess.com returns joined as Unix seconds — convert to ISO date string
+    const joinedUnixSec = profileData.joined || 0;
+    const joinedAt = joinedUnixSec > 0 ? new Date(joinedUnixSec * 1000).toISOString() : '';
+
+    const isClosed = profileData.status
+      ? profileData.status.toLowerCase().includes('closed') ||
+        profileData.status.toLowerCase().includes('fair_play')
+      : false;
+
+    // Fetch stats
+    const statsRes = await fetch(`https://api.chess.com/pub/player/${cleanUser}/stats`, {
+      headers: HTTP_HEADERS,
+    });
+
+    let currentRating: number | null = null;
+    let peakRating: number | null = null;
+    let gamesCount = 0;
+
+    if (statsRes.ok) {
+      const statsData = await statsRes.json();
+      const formatKey = `chess_${normFormat}`;
+      const formatStats = statsData[formatKey];
+
+      if (formatStats) {
+        if (typeof formatStats.last?.rating === 'number') {
+          currentRating = formatStats.last.rating;
+        }
+        if (typeof formatStats.best?.rating === 'number') {
+          peakRating = formatStats.best.rating;
+        }
+        if (formatStats.record) {
+          const win = formatStats.record.win || 0;
+          const loss = formatStats.record.loss || 0;
+          const draw = formatStats.record.draw || 0;
+          gamesCount = win + loss + draw;
+        }
+      }
+    }
+
+    // If peak not explicitly set, fall back to current rating
+    if (peakRating === null && currentRating !== null) {
+      peakRating = currentRating;
+    }
+
+    return {
+      verified: true,
+      currentRating,
+      peakRating,
+      gamesCount,
+      joinedAt,
+      rawUsername: username,
+      isClosed,
+    };
+  } catch (error) {
+    console.error(`Error fetching Chess.com stats for ${username}:`, error);
+    return defaultResult;
+  }
+}
+
+/**
+ * Fetches user profile and exact calculated rating history from Lichess public API.
+ * Returns joinedAt as ISO date string. Age in months is calculated externally.
+ */
+export async function fetchLichessUserStats(
+  username: string,
+  timeFormat: string = 'rapid'
+): Promise<PlatformUserStats> {
+  const defaultResult: PlatformUserStats = {
+    verified: false,
+    currentRating: null,
+    peakRating: null,
+    gamesCount: 0,
+    joinedAt: '',
+    rawUsername: username,
+    tosViolation: false,
+  };
+
+  if (!username) return defaultResult;
+
+  // If executing in browser, proxy through Nuxt API endpoint to bypass CORS
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch(`/api/verify-participant?username=${encodeURIComponent(username.trim())}&platform=lichess&timeFormat=${encodeURIComponent(timeFormat)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.stats) return data.stats;
+      }
+    } catch {
+      // Fall through to direct fetch if proxy fails
+    }
+  }
+
+  try {
+    const cleanUser = encodeURIComponent(username.trim());
+    const normFormat = (timeFormat || 'rapid').toLowerCase();
+
+    // Fetch profile
+    const profileRes = await fetch(`https://lichess.org/api/user/${cleanUser}`, {
+      headers: HTTP_HEADERS,
+    });
+
+    if (!profileRes.ok) {
+      return defaultResult;
+    }
+
+    const profileData = await profileRes.json();
+
+    // Lichess returns createdAt as Unix ms — convert to ISO date string
+    const createdAtMs = profileData.createdAt || 0;
+    const joinedAt = createdAtMs > 0 ? new Date(createdAtMs).toISOString() : '';
+
+    const tosViolation = !!profileData.tosViolation;
+
+    const perfData = profileData.perfs?.[normFormat];
+    let currentRating: number | null = null;
+    let gamesCount = 0;
+
+    if (perfData) {
+      if (typeof perfData.rating === 'number') {
+        currentRating = perfData.rating;
+      }
+      if (typeof perfData.games === 'number') {
+        gamesCount = perfData.games;
+      }
+    }
+
+    let peakRating: number | null = currentRating;
+
+    // Fetch rating history for exact historical rapid peak
+    try {
+      const historyRes = await fetch(`https://lichess.org/api/user/${cleanUser}/rating-history`, {
+        headers: HTTP_HEADERS,
+      });
+
+      if (historyRes.ok) {
+        const historyData = await historyRes.json();
+        const perfHistory = historyData.find(
+          (h: any) => h.name && h.name.toLowerCase() === timeFormat.toLowerCase()
+        );
+
+        if (perfHistory && Array.isArray(perfHistory.points) && perfHistory.points.length > 0) {
+          const ratings = perfHistory.points
+            .map((pt: any[]) => pt[3])
+            .filter((r: any) => typeof r === 'number');
+
+          if (ratings.length > 0) {
+            const historicalPeak = Math.max(...ratings);
+            if (peakRating === null || historicalPeak > peakRating) {
+              peakRating = historicalPeak;
+            }
+          }
+        }
+      }
+    } catch (histError) {
+      console.warn(`Could not fetch Lichess rating history for ${username}:`, histError);
+    }
+
+    return {
+      verified: true,
+      currentRating,
+      peakRating,
+      gamesCount,
+      joinedAt,
+      rawUsername: username,
+      tosViolation,
+    };
+  } catch (error) {
+    console.error(`Error fetching Lichess stats for ${username}:`, error);
+    return defaultResult;
+  }
+}

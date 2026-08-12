@@ -1,0 +1,31 @@
+{
+  "name": "ethchess-tourney-filter",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "NUXT_TELEMETRY_DISABLED=1 nuxt build",
+    "dev": "NUXT_TELEMETRY_DISABLED=1 nuxt dev",
+    "generate": "NUXT_TELEMETRY_DISABLED=1 nuxt generate",
+    "preview": "NUXT_TELEMETRY_DISABLED=1 nuxt preview",
+    "postinstall": "nuxt prepare",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "canvas-confetti": "^1.9.4",
+    "drizzle-orm": "^0.38.0",
+    "lucide-vue-next": "^0.474.0",
+    "nuxt": "^3.15.4",
+    "papaparse": "^5.4.1",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/node": "^22.10.0",
+    "@types/papaparse": "^5.3.15",
+    "drizzle-kit": "^0.30.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
