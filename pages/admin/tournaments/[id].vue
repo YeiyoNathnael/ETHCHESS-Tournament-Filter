@@ -318,7 +318,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue';
+import { ref, reactive, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useTournaments } from '~/composables/useTournaments';
 import { useToast } from '~/composables/useToast';
@@ -343,8 +343,14 @@ const route = useRoute();
 const router = useRouter();
 const tourneyId = computed(() => route.params.id as string);
 
-const { getTournament, getParticipants, updateTournamentRules, deleteTournament, defaultRules } = useTournaments();
+const { getTournament, getParticipants, fetchTournamentDetails, updateTournamentRules, deleteTournament, defaultRules } = useTournaments();
 const { addToast } = useToast();
+
+onMounted(() => {
+  if (tourneyId.value) {
+    fetchTournamentDetails(tourneyId.value);
+  }
+});
 
 const tournament = computed(() => getTournament(tourneyId.value));
 const participants = computed(() => getParticipants(tourneyId.value));
@@ -499,7 +505,7 @@ function formatDate(isoStr: string): string {
 
 .banner-strip {
   position: relative;
-  height: 340px;
+  height: 320px;
   overflow: hidden;
 }
 
@@ -507,7 +513,6 @@ function formatDate(isoStr: string): string {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center center;
 }
 
 .overlay {

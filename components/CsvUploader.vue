@@ -92,7 +92,7 @@ const emit = defineEmits<{
   (e: 'parsed', count: number): void;
 }>();
 
-const { getTournament, setParticipants, loadDefaultCsvData, verifyAllParticipants } = useTournaments();
+const { getTournament, setParticipants, loadDefaultCsvData, processCsvFile, verifyAllParticipants } = useTournaments();
 const { addToast } = useToast();
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -141,22 +141,10 @@ async function processFile(file: File) {
     const tourney = getTournament(props.tournamentId);
     if (!tourney) return;
 
-    const parsed = parseCsvContent(text, props.tournamentId, tourney.rules, tourney.timeControl);
-    setParticipants(props.tournamentId, parsed);
+    const parsed = await processCsvFile(props.tournamentId, text);
 
-    addToast('CSV Ingested', `Successfully parsed ${parsed.length} entries from ${file.name}.`, 'success');
+    addToast('CSV Ingested & Saved', `Successfully parsed and stored ${parsed.length} entries from ${file.name} to database.`, 'success');
     emit('parsed', parsed.length);
-
-    // Trigger live public API background verification with progress bar
-    isProcessing.value = false;
-    isVerifying.value = true;
-    progressTotal.value = parsed.length;
-    progressCompleted.value = 0;
-
-    await verifyAllParticipants(props.tournamentId, (completed, total) => {
-      progressCompleted.value = completed;
-      progressTotal.value = total;
-    });
 
     addToast('Live Ratings Synced', 'Public API ratings verification process complete.', 'info');
   } catch (err: any) {
@@ -172,7 +160,6 @@ async function handleLoadDefaultCsv() {
   filenameLoaded.value = 'ETHCHESS_Club_Under_1500_Tournament_Responses_Form_Responses_1.csv';
 
   try {
-    // Attempt fetch from public folder, or fallback to composable inline raw data
     let csvText = '';
     try {
       const res = await fetch('/ETHCHESS_Club_Under_1500_Tournament_Responses_Form_Responses_1.csv');
@@ -183,27 +170,14 @@ async function handleLoadDefaultCsv() {
       // Fallback
     }
 
-    const parsed = loadDefaultCsvData(props.tournamentId, csvText || undefined);
+    const parsed = await loadDefaultCsvData(props.tournamentId, csvText || undefined);
 
     addToast(
       'Default Responses Loaded',
-      `Parsed ${parsed.length} submissions from ETHCHESS Under 1500 form responses.`,
+      `Parsed and verified ${parsed.length} submissions from ETHCHESS Under 1500 form responses.`,
       'success'
     );
     emit('parsed', parsed.length);
-
-    // Start verification progress simulation/API check
-    isProcessing.value = false;
-    isVerifying.value = true;
-    progressTotal.value = parsed.length;
-    progressCompleted.value = 0;
-
-    await verifyAllParticipants(props.tournamentId, (completed, total) => {
-      progressCompleted.value = completed;
-      progressTotal.value = total;
-    });
-
-    addToast('Verification Complete', 'Ratings and eligibility status refreshed.', 'info');
   } catch (err: any) {
     addToast('Error', err?.message || 'Could not load default CSV', 'error');
   } finally {

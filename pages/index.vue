@@ -115,7 +115,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTournaments } from '~/composables/useTournaments';
 import TournamentCard from '~/components/TournamentCard.vue';
@@ -123,7 +123,14 @@ import CreateTournamentModal from '~/components/CreateTournamentModal.vue';
 import { Trophy, Plus, Users, CheckCircle2, ShieldCheck } from 'lucide-vue-next';
 
 const router = useRouter();
-const { tournaments, getParticipants } = useTournaments();
+const { tournaments, getParticipants, fetchAllTournaments, fetchTournamentDetails } = useTournaments();
+
+onMounted(async () => {
+  await fetchAllTournaments();
+  tournaments.value.forEach((t) => {
+    fetchTournamentDetails(t.id);
+  });
+});
 
 const isCreateModalOpen = ref(false);
 const filterTab = ref<'all' | 'upcoming' | 'completed'>('all');

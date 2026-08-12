@@ -100,6 +100,11 @@ export default defineEventHandler(async (event) => {
   for (let i = 0; i < rawList.length; i += chunkSize) {
     const chunk = rawList.slice(i, i + chunkSize);
 
+    // Throttle slightly to respect Lichess & Chess.com rate limits
+    if (i > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+
     const chunkResults = await Promise.all(
       chunk.map(async (raw) => {
         let chessComStats: PlatformUserStats | null = null;

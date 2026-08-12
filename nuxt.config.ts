@@ -5,6 +5,10 @@ export default defineNuxtConfig({
     compatibilityVersion: 4,
   },
   devtools: { enabled: true },
+  runtimeConfig: {
+    tursoDatabaseUrl: process.env.TURSO_DATABASE_URL || process.env.NUXT_TURSO_DATABASE_URL || 'file:local.db',
+    tursoAuthToken: process.env.TURSO_AUTH_TOKEN || process.env.NUXT_TURSO_AUTH_TOKEN || '',
+  },
   css: ['~/assets/css/main.css'],
   vite: {
     server: {

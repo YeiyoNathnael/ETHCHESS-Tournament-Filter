@@ -1,4 +1,5 @@
 import type { PlatformUserStats } from './chessApi';
+import type { TrustScoreDetails } from '~/types/tournament';
 
 export interface TournamentRuleLimits {
   chessComMaxRating: number;
@@ -9,11 +10,124 @@ export interface TournamentRuleLimits {
   lichessMaxPeak: number;
   lichessMinAgeMonths: number;
   lichessMinGames: number;
+  minimumTrustScore?: number;
+  peakWindowMonths?: number;
+  rejectProvisional?: boolean;
 }
 
 export interface RuleEvaluationResult {
   systemVerdict: 'ELIGIBLE' | 'REJECTED';
   rejectionReasons: string[];
+  trustScore?: number;
+  trustDetails?: TrustScoreDetails;
+}
+
+/**
+ * Standard Normal Cumulative Distribution Function (CDF) Φ(z)
+ * Φ(z) = (1 + erf(z / sqrt(2))) / 2
+ * Uses Abramowitz and Stegun formula 7.1.26 approximation for erf(x).
+ */
+export function standardNormalCdf(z: number): number {
+  const a1 = 0.254829592;
+  const a2 = -0.284496736;
+  const a3 = 1.421413741;
+  const a4 = -1.453152027;
+  const a5 = 1.061405429;
+  const p = 0.3275911;
+
+  const sign = z < 0 ? -1 : 1;
+  const x = Math.abs(z) / Math.sqrt(2);
+
+  const t = 1.0 / (1.0 + p * x);
+  const y = 1.0 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+
+  const erf = sign * y;
+  return (1.0 + erf) / 2.0;
+}
+
+/**
+ * Game Count Reliability Factor (G) based on FIDE & USCF thresholds.
+ * <5 games: 3.0 (FIDE initial threshold)
+ * 5-25 games: 2.0 (USCF provisional)
+ * 26-29 games: 1.3 (USCF established boundary)
+ * >=30 games: 1.0 (FIDE K-factor drops, Lichess settled)
+ */
+export function getGameCountFactor(gamesCount: number): number {
+  if (gamesCount < 5) return 3.0;
+  if (gamesCount <= 25) return 2.0;
+  if (gamesCount <= 29) return 1.3;
+  return 1.0;
+}
+
+/**
+ * Computes ETHCHESS Trust Score (0-100) for a participant on a platform.
+ * Score = Φ((limit - effectiveRating) / effectiveRd) * 100
+ */
+export function computePlatformTrustScore(
+  stats: PlatformUserStats | null,
+  maxRatingLimit: number,
+  peakWindowMonths: number = 24,
+  platform: 'chessCom' | 'lichess'
+): TrustScoreDetails | undefined {
+  if (!stats || !stats.verified) return undefined;
+
+  const rating = stats.currentRating ?? maxRatingLimit;
+  const peak = stats.peakRating ?? rating;
+  const isProv = stats.prov ?? false;
+  const rd = stats.rd ?? (isProv ? 200 : 80);
+  const games = stats.gamesCount ?? 0;
+
+  // Calculate peak recency weight
+  let monthsSincePeak = 0;
+  if (stats.peakDate) {
+    const peakMs = new Date(stats.peakDate).getTime();
+    if (!isNaN(peakMs) && peakMs > 0) {
+      monthsSincePeak = Math.max(0, (Date.now() - peakMs) / (1000 * 60 * 60 * 24 * 30.4375));
+    }
+  }
+
+  const peakWeight = peakWindowMonths > 0 ? Math.max(0, 1 - monthsSincePeak / peakWindowMonths) : 0;
+  const peakContribution = peak * peakWeight + rating * (1 - peakWeight);
+  const effectiveRating = Math.max(rating, peakContribution);
+
+  const gameCountFactor = getGameCountFactor(games);
+  const effectiveRd = rd * gameCountFactor;
+
+  const zScore = (maxRatingLimit - effectiveRating) / (effectiveRd || 1);
+  const rawProb = standardNormalCdf(zScore);
+  const score = Math.min(100, Math.max(0, Math.round(rawProb * 100)));
+
+  let verdictBand: TrustScoreDetails['verdictBand'] = 'REJECT';
+  if (score >= 90) verdictBand = 'EXCELLENT';
+  else if (score >= 70) verdictBand = 'GOOD';
+  else if (score >= 50) verdictBand = 'BORDERLINE';
+  else if (score >= 30) verdictBand = 'POOR';
+  else verdictBand = 'REJECT';
+
+  let explanation = `Trust Score ${score}/100: ${Math.round(rawProb * 100)}% statistical probability true strength ≤ ${maxRatingLimit}.`;
+  if (effectiveRating > rating) {
+    explanation += ` Peak (${peak}) weighted at ${Math.round(peakWeight * 100)}% (${Math.round(monthsSincePeak)} mo ago).`;
+  }
+  if (gameCountFactor > 1) {
+    explanation += ` Expanded uncertainty due to ${games} total games (factor ×${gameCountFactor}).`;
+  }
+
+  return {
+    score,
+    zScore: Number(zScore.toFixed(3)),
+    effectiveRating: Math.round(effectiveRating),
+    effectiveRd: Math.round(effectiveRd),
+    gameCountFactor,
+    peakWeight: Number(peakWeight.toFixed(2)),
+    peakContribution: Math.round(peakContribution),
+    verdictBand,
+    explanation,
+    rd,
+    gamesCount: games,
+    lastPlayedAt: stats.lastPlayedAt,
+    isProvisional: isProv,
+    platform,
+  };
 }
 
 /**

@@ -2,11 +2,15 @@ export interface PlatformUserStats {
   verified: boolean;
   currentRating: number | null;
   peakRating: number | null;
+  peakDate?: string;
   gamesCount: number;
-  joinedAt: string; // ISO date string — age is calculated from this to today at evaluation time
+  joinedAt: string; // ISO date string
   rawUsername: string;
   tosViolation?: boolean;
   isClosed?: boolean;
+  rd?: number;
+  prov?: boolean;
+  lastPlayedAt?: string;
 }
 
 const HTTP_HEADERS = {
@@ -53,6 +57,7 @@ export async function fetchChessComUserStats(
     // Fetch profile
     const profileRes = await fetch(`https://api.chess.com/pub/player/${cleanUser}`, {
       headers: HTTP_HEADERS,
+      signal: AbortSignal.timeout(6000),
     });
 
     if (!profileRes.ok) {
@@ -73,11 +78,15 @@ export async function fetchChessComUserStats(
     // Fetch stats
     const statsRes = await fetch(`https://api.chess.com/pub/player/${cleanUser}/stats`, {
       headers: HTTP_HEADERS,
+      signal: AbortSignal.timeout(6000),
     });
 
     let currentRating: number | null = null;
     let peakRating: number | null = null;
+    let peakDate: string | undefined = undefined;
     let gamesCount = 0;
+    let rd: number | undefined = undefined;
+    let lastPlayedAt: string | undefined = undefined;
 
     if (statsRes.ok) {
       const statsData = await statsRes.json();
@@ -88,8 +97,17 @@ export async function fetchChessComUserStats(
         if (typeof formatStats.last?.rating === 'number') {
           currentRating = formatStats.last.rating;
         }
+        if (typeof formatStats.last?.rd === 'number') {
+          rd = formatStats.last.rd;
+        }
+        if (typeof formatStats.last?.date === 'number' && formatStats.last.date > 0) {
+          lastPlayedAt = new Date(formatStats.last.date * 1000).toISOString();
+        }
         if (typeof formatStats.best?.rating === 'number') {
           peakRating = formatStats.best.rating;
+        }
+        if (typeof formatStats.best?.date === 'number' && formatStats.best.date > 0) {
+          peakDate = new Date(formatStats.best.date * 1000).toISOString();
         }
         if (formatStats.record) {
           const win = formatStats.record.win || 0;
@@ -109,13 +127,17 @@ export async function fetchChessComUserStats(
       verified: true,
       currentRating,
       peakRating,
+      peakDate,
       gamesCount,
       joinedAt,
       rawUsername: username,
       isClosed,
+      rd,
+      prov: (rd ?? 0) > 80,
+      lastPlayedAt,
     };
-  } catch (error) {
-    console.error(`Error fetching Chess.com stats for ${username}:`, error);
+  } catch (error: any) {
+    // Quiet handling for network timeouts or API rate limits
     return defaultResult;
   }
 }
@@ -160,6 +182,7 @@ export async function fetchLichessUserStats(
     // Fetch profile
     const profileRes = await fetch(`https://lichess.org/api/user/${cleanUser}`, {
       headers: HTTP_HEADERS,
+      signal: AbortSignal.timeout(6000),
     });
 
     if (!profileRes.ok) {
@@ -177,6 +200,9 @@ export async function fetchLichessUserStats(
     const perfData = profileData.perfs?.[normFormat];
     let currentRating: number | null = null;
     let gamesCount = 0;
+    let rd: number | undefined = undefined;
+    let prov = false;
+    let lastPlayedAt: string | undefined = profileData.seenAt ? new Date(profileData.seenAt).toISOString() : undefined;
 
     if (perfData) {
       if (typeof perfData.rating === 'number') {
@@ -185,14 +211,20 @@ export async function fetchLichessUserStats(
       if (typeof perfData.games === 'number') {
         gamesCount = perfData.games;
       }
+      if (typeof perfData.rd === 'number') {
+        rd = perfData.rd;
+      }
+      prov = perfData.prov === true;
     }
 
     let peakRating: number | null = currentRating;
+    let peakDate: string | undefined = undefined;
 
     // Fetch rating history for exact historical rapid peak
     try {
       const historyRes = await fetch(`https://lichess.org/api/user/${cleanUser}/rating-history`, {
         headers: HTTP_HEADERS,
+        signal: AbortSignal.timeout(6000),
       });
 
       if (historyRes.ok) {
@@ -210,6 +242,11 @@ export async function fetchLichessUserStats(
             const historicalPeak = Math.max(...ratings);
             if (peakRating === null || historicalPeak > peakRating) {
               peakRating = historicalPeak;
+              const peakPt = perfHistory.points.find((pt: any[]) => pt[3] === historicalPeak);
+              if (peakPt) {
+                // pt is [year, month (0-indexed), day, rating]
+                peakDate = new Date(peakPt[0], peakPt[1], peakPt[2]).toISOString();
+              }
             }
           }
         }
@@ -222,13 +259,17 @@ export async function fetchLichessUserStats(
       verified: true,
       currentRating,
       peakRating,
+      peakDate,
       gamesCount,
       joinedAt,
       rawUsername: username,
       tosViolation,
+      rd,
+      prov,
+      lastPlayedAt,
     };
-  } catch (error) {
-    console.error(`Error fetching Lichess stats for ${username}:`, error);
+  } catch (error: any) {
+    // Quiet handling for network timeouts or API rate limits
     return defaultResult;
   }
 }
