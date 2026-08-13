@@ -460,3 +460,51 @@ a:hover {
   font-weight: 700;
   color: var(--color-jade-deep, #0F5257);
 }
+
+/* Delete & Purge Buttons */
+.btn-purge-rejected {
+  color: var(--color-terracotta, #D96B43) !important;
+  border-color: rgba(217, 107, 67, 0.4) !important;
+}
+
+.btn-purge-rejected:hover {
+  background: var(--color-terracotta, #D96B43) !important;
+  color: #ffffff !important;
+}
+
+.btn-icon-delete {
+  background: transparent;
+  color: var(--color-terracotta, #D96B43);
+  border: 1px solid rgba(217, 107, 67, 0.3);
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.btn-icon-delete:hover {
+  background: var(--color-terracotta, #D96B43);
+  color: #ffffff;
+}
+
+.btn-delete-candidate {
+  background: rgba(217, 107, 67, 0.1);
+  color: var(--color-terracotta, #D96B43);
+  border: 1px solid var(--color-terracotta, #D96B43);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-delete-candidate:hover {
+  background: var(--color-terracotta, #D96B43);
+  color: #ffffff;
+}

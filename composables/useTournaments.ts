@@ -388,6 +388,41 @@ export function useTournaments() {
     }
   };
 
+  const deleteParticipant = async (tournamentId: string, participantId: string): Promise<boolean> => {
+    if (!isNaN(Number(participantId))) {
+      try {
+        await $fetch(`/api/participants/${participantId}`, { method: 'DELETE' });
+      } catch (err) {
+        console.warn(`Could not delete participant ${participantId}:`, err);
+      }
+    }
+    const list = participantsMap.value[tournamentId] || [];
+    participantsMap.value[tournamentId] = list.filter((p) => String(p.id) !== String(participantId));
+    return true;
+  };
+
+  const purgeRejectedParticipants = async (tournamentId: string): Promise<number> => {
+    let purged = 0;
+    if (!isNaN(Number(tournamentId))) {
+      try {
+        const res = await $fetch<{ success: boolean; purgedCount: number }>(`/api/tournaments/${tournamentId}/purge-rejected`, {
+          method: 'POST',
+        });
+        if (res && res.success) {
+          purged = res.purgedCount;
+        }
+      } catch (err) {
+        console.warn(`Could not purge rejected participants for tournament ${tournamentId}:`, err);
+      }
+    }
+
+    const list = participantsMap.value[tournamentId] || [];
+    const remaining = list.filter((p) => p.status === 'APPROVED' || (p.verdict === 'ELIGIBLE' && p.status !== 'DISAPPROVED'));
+    if (purged === 0) purged = list.length - remaining.length;
+    participantsMap.value[tournamentId] = remaining;
+    return purged;
+  };
+
   return {
     tournaments: allTournaments,
     getTournament,
@@ -401,6 +436,8 @@ export function useTournaments() {
     processCsvFile,
     toggleManualOverride,
     updateParticipantStatus,
+    deleteParticipant,
+    purgeRejectedParticipants,
     loadDefaultCsvData,
     verifyAllParticipants,
     defaultRules,

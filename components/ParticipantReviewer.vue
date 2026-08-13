@@ -100,6 +100,16 @@
           <Copy :size="14" />
           <span>Copy {{ counts.approved }} Approved Handles</span>
         </button>
+
+        <button
+          v-if="(counts.rejected + counts.disapproved) > 0"
+          class="btn btn-sm btn-outline btn-purge-rejected"
+          title="Permanently remove all rejected and disapproved candidates"
+          @click="handlePurgeRejected"
+        >
+          <Trash2 :size="14" />
+          <span>Purge {{ counts.rejected + counts.disapproved }} Rejected</span>
+        </button>
       </div>
     </div>
 
@@ -140,10 +150,11 @@
 
         <tbody>
           <tr v-if="filteredParticipants.length === 0">
-            <td colspan="6" class="empty-state">
-              <UserX :size="32" class="empty-icon" />
-              <p class="empty-title">No participants found</p>
-              <p class="empty-sub">Try tweaking your search query or switching filter tabs.</p>
+            <td colspan="7" class="empty-table-cell">
+              <div class="empty-state">
+                <UserX :size="32" />
+                <p>No participants match your filter query.</p>
+              </div>
             </td>
           </tr>
 
@@ -283,6 +294,14 @@
                   <Send :size="14" />
                   <span>{{ p.status === 'APPROVED' ? 'Confirmed' : 'Accept & Send' }}</span>
                 </button>
+
+                <button
+                  class="btn btn-sm btn-icon-delete"
+                  title="Delete candidate permanently"
+                  @click.stop="handleDeleteSingle(p)"
+                >
+                  <Trash2 :size="14" />
+                </button>
               </div>
             </td>
           </tr>
@@ -309,30 +328,23 @@
             </button>
           </div>
 
-          <div class="modal-body space-y">
-            <!-- Verdict Banner -->
-            <div
-              class="verdict-banner"
-              :class="{
-                eligible: selectedParticipant.verdict === 'ELIGIBLE' || selectedParticipant.manualOverride,
-                rejected: selectedParticipant.verdict === 'REJECTED' && !selectedParticipant.manualOverride
-              }"
-            >
-              <div class="banner-icon">
-                <ShieldCheck v-if="selectedParticipant.verdict === 'ELIGIBLE' || selectedParticipant.manualOverride" :size="24" />
+          <div class="modal-body">
+            <!-- Summary Status Banner -->
+            <div class="modal-summary-banner" :class="{ eligible: selectedParticipant.verdict === 'ELIGIBLE', rejected: selectedParticipant.verdict === 'REJECTED' }">
+              <div class="banner-left">
+                <ShieldCheck v-if="selectedParticipant.verdict === 'ELIGIBLE'" :size="24" />
                 <AlertTriangle v-else :size="24" />
-              </div>
-              <div>
-                <div class="banner-title">
-                  System Verdict: {{ selectedParticipant.verdict }}
-                  <span v-if="selectedParticipant.manualOverride" class="override-tag">⚡ Manually Overridden</span>
-                </div>
-                <div class="banner-sub">
-                  <span v-if="selectedParticipant.verdict === 'ELIGIBLE'">Participant meets all tournament qualification criteria.</span>
-                  <span v-else-if="selectedParticipant.manualOverride">Organizer manually force-approved candidate despite failing automated rules.</span>
-                  <span v-else>Participant failed automated qualification requirements.</span>
+                <div>
+                  <h4 class="banner-title">System Verdict: {{ selectedParticipant.verdict }}</h4>
+                  <p class="banner-desc">
+                    <span v-if="selectedParticipant.verdict === 'ELIGIBLE'">Participant meets all tournament qualification criteria.</span>
+                    <span v-else>Participant failed automated qualification requirements.</span>
+                  </p>
                 </div>
               </div>
+              <span class="trust-badge-modal" :class="getTrustBadgeClass(selectedParticipant.trustScore)">
+                Trust Score: {{ selectedParticipant.trustScore ?? 'N/A' }}/100
+              </span>
             </div>
 
             <!-- Trust Score Breakdown Card in Modal -->
@@ -487,6 +499,15 @@
 
           <!-- Modal Footer Actions -->
           <div class="modal-footer">
+            <button
+              class="btn btn-delete-candidate"
+              title="Delete candidate permanently"
+              @click="handleDeleteSingle(selectedParticipant)"
+            >
+              <Trash2 :size="16" />
+              <span>Delete Candidate</span>
+            </button>
+
             <button class="btn btn-outline" @click="closeDetailModal">Close</button>
 
             <button
@@ -524,7 +545,8 @@ import {
   Zap,
   Eye,
   Copy,
-  Gauge
+  Gauge,
+  Trash2,
 } from 'lucide-vue-next';
 import confetti from 'canvas-confetti';
 
@@ -532,7 +554,7 @@ const props = defineProps<{
   tournamentId: string;
 }>();
 
-const { getTournament, getParticipants, toggleManualOverride, updateParticipantStatus } = useTournaments();
+const { getTournament, getParticipants, toggleManualOverride, updateParticipantStatus, deleteParticipant, purgeRejectedParticipants } = useTournaments();
 const { addToast } = useToast();
 
 const currentTournament = computed(() => getTournament(props.tournamentId));
@@ -775,6 +797,31 @@ async function handleAcceptAndConfirm(p: Participant) {
   if (tgWindow) {
     tgWindow.focus();
   }
+}
+
+async function handleDeleteSingle(p: Participant) {
+  const handleName = p.telegramHandle || p.rawChessComUser || p.id;
+  if (typeof window !== 'undefined' && !window.confirm(`Are you sure you want to permanently delete candidate ${handleName}?`)) {
+    return;
+  }
+  await deleteParticipant(props.tournamentId, String(p.id));
+  if (selectedParticipant.value?.id === p.id) {
+    selectedParticipant.value = null;
+  }
+  addToast('Candidate Deleted', `Permanently deleted candidate ${handleName}.`, 'info');
+}
+
+async function handlePurgeRejected() {
+  const totalRejected = counts.value.rejected + counts.value.disapproved;
+  if (totalRejected === 0) {
+    addToast('No Rejected Candidates', 'There are no rejected candidates to purge.', 'info');
+    return;
+  }
+  if (typeof window !== 'undefined' && !window.confirm(`Are you sure you want to permanently delete all ${totalRejected} rejected/disapproved candidates?`)) {
+    return;
+  }
+  const purgedCount = await purgeRejectedParticipants(props.tournamentId);
+  addToast('Purged Rejected Candidates', `Successfully removed ${purgedCount} rejected candidates.`, 'success');
 }
 
 function formatTimestamp(isoStr?: string): string {
