@@ -48,3 +48,4 @@ coverage/
 # Vercel/Netlify (if deploying there)
 .vercel
 .netlify
+api-1.json
