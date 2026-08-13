@@ -37,8 +37,7 @@ export const participants = sqliteTable('participants', {
   chessComLastPlayedAt: text('chess_com_last_played_at'),
   chessComRd: integer('chess_com_rd'),
   chessComProv: integer('chess_com_prov', { mode: 'boolean' }),
-  // nullable: null = no API data; true/false = confirmed from API
-  chessComClosed: integer('chess_com_closed', { mode: 'boolean' }),
+  chessComClosed: integer('chess_com_closed', { mode: 'boolean' }).default(false).notNull(),
 
   // Lichess fields
   lichessVerified: integer('lichess_verified', { mode: 'boolean' }).default(false).notNull(),
@@ -50,8 +49,7 @@ export const participants = sqliteTable('participants', {
   lichessLastPlayedAt: text('lichess_last_played_at'),
   lichessRd: integer('lichess_rd'),
   lichessProv: integer('lichess_prov', { mode: 'boolean' }),
-  // nullable: null = no API data; true = confirmed ToS violation from API
-  lichessTosViolation: integer('lichess_tos_violation', { mode: 'boolean' }),
+  lichessTosViolation: integer('lichess_tos_violation', { mode: 'boolean' }).default(false).notNull(),
 
   systemVerdict: text('system_verdict').$type<'ELIGIBLE' | 'REJECTED'>().notNull(),
   rejectionReasons: text('rejection_reasons', { mode: 'json' }).$type<string[]>().notNull(),
