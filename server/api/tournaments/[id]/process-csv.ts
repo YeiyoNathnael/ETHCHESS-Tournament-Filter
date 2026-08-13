@@ -3,7 +3,7 @@ import { db, ensureTablesExist } from '~/server/db';
 import { tournaments, participants } from '~/server/db/schema';
 import { eq } from 'drizzle-orm';
 import { parseAndDeduplicateCsv } from '~/utils/csvParser';
-import { fetchChessComUserStats, fetchLichessUserStats, fetchLichessUsersBulk, type PlatformUserStats } from '~/utils/chessApi';
+import { fetchLichessUsersBulk, fetchChessComUsersBulk } from '~/utils/chessApi';
 import { evaluateParticipantRules, type TournamentRuleLimits } from '~/utils/ruleEngine';
 
 export default defineEventHandler(async (event) => {
@@ -18,55 +18,47 @@ export default defineEventHandler(async (event) => {
 
   const idParam = event.context.params?.id;
   const id = Number(idParam);
-
-  if (!idParam || isNaN(id)) {
+  if (isNaN(id) || id <= 0) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Invalid tournament ID',
     });
   }
 
-  // 1. Fetch tournament definition
-  const foundTournaments = await db.select().from(tournaments).where(eq(tournaments.id, id));
-  if (foundTournaments.length === 0) {
+  // 1. Verify tournament exists
+  const existing = await db.select().from(tournaments).where(eq(tournaments.id, id));
+  if (!existing || existing.length === 0) {
     throw createError({
       statusCode: 404,
       statusMessage: 'Tournament not found',
     });
   }
+  const tournament = existing[0];
 
-  const tournament = foundTournaments[0];
-  if (!tournament) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Tournament not found',
-    });
-  }
-
-  // 2. Extract CSV content from request
+  // 2. Extract CSV string from multipart/form-data or JSON body
   let csvContent = '';
-
   const contentType = event.node.req.headers['content-type'] || '';
+
   if (contentType.includes('multipart/form-data')) {
-    const formData = await readMultipartFormData(event);
-    if (formData && formData.length > 0) {
-      const fileItem = formData.find((item) => item.name === 'file' || item.name === 'csv' || item.filename);
-      if (fileItem && fileItem.data) {
+    const multipart = await readMultipartFormData(event);
+    if (multipart && multipart.length > 0) {
+      const fileItem = multipart.find((item) => item.name === 'file' || item.name === 'csv');
+      if (fileItem) {
         csvContent = fileItem.data.toString('utf-8');
       }
     }
   } else {
     const body = await readBody(event);
-    if (typeof body === 'string') {
-      csvContent = body;
-    } else if (body && typeof body.csvContent === 'string') {
-      csvContent = body.csvContent;
-    } else if (body && typeof body.csv === 'string') {
-      csvContent = body.csv;
+    if (body) {
+      if (typeof body === 'string') {
+        csvContent = body;
+      } else if (body.csvContent && typeof body.csvContent === 'string') {
+        csvContent = body.csvContent;
+      }
     }
   }
 
-  if (!csvContent || csvContent.trim().length === 0) {
+  if (!csvContent || !csvContent.trim()) {
     throw createError({
       statusCode: 400,
       statusMessage: 'No CSV content provided in request body or file upload',
@@ -89,48 +81,39 @@ export default defineEventHandler(async (event) => {
     minimumTrustScore: tournament.minimumTrustScore ?? 65,
   };
 
-  // Clear previous participants for this tournament to re-process cleanly
-  await db.delete(participants).where(eq(participants.tournamentId, id));
+  console.log(`[Process-CSV] Processing ${rawList.length} candidates for Tournament ID: ${id}`);
+
+  // Collect platform usernames for bulk fetching
+  const lichessUsernames = rawList
+    .map((r) => r.rawLichessUser)
+    .filter((u): u is string => !!u);
+
+  const chessComUsernames = rawList
+    .map((r) => r.rawChessComUser)
+    .filter((u): u is string => !!u);
+
+  console.log(`[Process-CSV] Parallel bulk fetching ${lichessUsernames.length} Lichess & ${chessComUsernames.length} Chess.com handles...`);
+
+  // Parallel bulk fetch both platforms
+  const [lichessBulkProfiles, chessComBulkProfiles] = await Promise.all([
+    fetchLichessUsersBulk(lichessUsernames, 'rapid'),
+    fetchChessComUsersBulk(chessComUsernames, 'rapid'),
+  ]);
+
+  console.log(`[Process-CSV] Parallel bulk fetch complete. Received ${lichessBulkProfiles.size} Lichess & ${chessComBulkProfiles.size} Chess.com profile responses.`);
 
   const processedResults = [];
   let eligibleCount = 0;
   let rejectedCount = 0;
 
-  console.log(`[Process-CSV] Processing ${rawList.length} candidates for Tournament ID: ${id}`);
-
-  // ── Step 1: Bulk fetch ALL Lichess profiles in a single POST /api/users ────
-  const lichessUsernames = rawList
-    .map((r) => r.rawLichessUser)
-    .filter((u): u is string => !!u);
-
-  console.log(`[Process-CSV] Bulk fetching ${lichessUsernames.length} Lichess handles via POST /api/users...`);
-  const lichessBulkProfiles = await fetchLichessUsersBulk(lichessUsernames, 'rapid');
-  console.log(`[Process-CSV] Lichess bulk fetch complete. Received ${lichessBulkProfiles.size} profile responses.`);
-
-  // ── Step 2: Fetch rating history per Lichess user (sequential, 1 at a time) ─
-  const lichessFullStats = new Map<string, PlatformUserStats>();
-  for (const username of lichessUsernames) {
-    const baseStats = lichessBulkProfiles.get(username.toLowerCase());
-    if (baseStats?.verified) {
-      const withHistory = await fetchLichessUserStats(username, 'rapid');
-      lichessFullStats.set(username.toLowerCase(), withHistory);
-    }
-  }
-
-  // ── Step 3: Fetch Chess.com stats sequentially & assemble records ─────────
-  console.log(`[Process-CSV] Evaluating rule matrix & Trust Scores for ${rawList.length} candidates...`);
   for (const raw of rawList) {
-    let chessComStats: PlatformUserStats | null = null;
-    let lichessStats: PlatformUserStats | null = null;
+    const chessComStats = raw.rawChessComUser
+      ? chessComBulkProfiles.get(raw.rawChessComUser.toLowerCase()) ?? null
+      : null;
 
-    if (raw.rawChessComUser) {
-      chessComStats = await fetchChessComUserStats(raw.rawChessComUser, 'rapid');
-    }
-    if (raw.rawLichessUser) {
-      lichessStats = lichessFullStats.get(raw.rawLichessUser.toLowerCase()) ??
-        lichessBulkProfiles.get(raw.rawLichessUser.toLowerCase()) ??
-        null;
-    }
+    const lichessStats = raw.rawLichessUser
+      ? lichessBulkProfiles.get(raw.rawLichessUser.toLowerCase()) ?? null
+      : null;
 
     const ruleRes = evaluateParticipantRules(
       limits,
@@ -146,7 +129,7 @@ export default defineEventHandler(async (event) => {
       rejectedCount++;
     }
 
-    const newParticipant = {
+    processedResults.push({
       tournamentId: id,
       telegramUsername: raw.telegramUsername,
       rawChessComUser: raw.rawChessComUser,
@@ -177,13 +160,12 @@ export default defineEventHandler(async (event) => {
       organizerNotes: null,
       confirmedAt: null,
       submittedAt: raw.submittedAt,
-    };
-
-    processedResults.push(newParticipant);
+    });
   }
 
+  // Clear previous participants and bulk insert new records atomically
+  await db.delete(participants).where(eq(participants.tournamentId, id));
 
-  // Bulk insert into SQLite database if items exist
   let savedParticipants: (typeof participants.$inferSelect)[] = [];
   if (processedResults.length > 0) {
     savedParticipants = await db.insert(participants).values(processedResults).returning();
