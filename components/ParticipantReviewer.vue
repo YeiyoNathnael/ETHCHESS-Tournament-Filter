@@ -667,6 +667,37 @@ async function handleToggleOverride(p: Participant) {
   }
 }
 
+async function copyToClipboardFallback(text: string): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.warn('navigator.clipboard.writeText failed, trying fallback:', err);
+    }
+  }
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '-9999px';
+    textarea.setAttribute('readonly', '');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return successful;
+  } catch (fallbackErr) {
+    console.error('Textarea copy fallback failed:', fallbackErr);
+    return false;
+  }
+}
+
 async function handleCopyApprovedTelegramList() {
   const approvedList = rawParticipants.value
     .filter((p) => p.status === 'APPROVED')
@@ -679,17 +710,13 @@ async function handleCopyApprovedTelegramList() {
   }
 
   const text = approvedList.join(' ');
-  try {
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(text);
-      addToast(
-        'Copied Approved List!',
-        `Copied ${approvedList.length} approved Telegram handles to clipboard for broadcast message!`,
-        'success'
-      );
-    }
-  } catch (err) {
-    console.warn('Copy error:', err);
+  const copied = await copyToClipboardFallback(text);
+  if (copied) {
+    addToast(
+      'Copied Approved List!',
+      `Copied ${approvedList.length} approved Telegram handles to clipboard for broadcast message!`,
+      'success'
+    );
   }
 }
 
@@ -705,14 +732,19 @@ function sanitizeTelegramHandle(raw?: string | null): string {
 
 async function handleAcceptAndConfirm(p: Participant) {
   const cleanHandle = sanitizeTelegramHandle(p.telegramHandle);
+  const tourneyTitle = currentTournament.value?.title || 'U1500 Blitz Championship';
+  const confirmationMsg = `Player Confirmed! You are eligible to compete in the ${tourneyTitle}.\n\nPlease join the Lichess team using the link below to lock in your spot:\n\nhttps://lichess.org/team/ethchess-u1500`;
 
-  // Synchronously launch Telegram window BEFORE async calls to prevent browser popup blocking!
+  // 1. SYNCHRONOUS CLIPBOARD COPY FIRST (in direct user click gesture!)
+  const copied = await copyToClipboardFallback(confirmationMsg);
+
+  // 2. SYNCHRONOUS TELEGRAM WINDOW OPEN (in direct user click gesture!)
   let tgWindow: Window | null = null;
   if (cleanHandle) {
     tgWindow = window.open(`https://t.me/${cleanHandle}`, '_blank', 'noopener,noreferrer');
   }
 
-  // Update status to APPROVED
+  // 3. Update status to APPROVED in database
   await updateParticipantStatus(props.tournamentId, p.id, 'APPROVED');
 
   // Trigger celebration confetti
@@ -722,23 +754,20 @@ async function handleAcceptAndConfirm(p: Participant) {
     origin: { y: 0.7 },
   });
 
-  const tourneyTitle = currentTournament.value?.title || 'U1500 Blitz Championship';
-  const confirmationMsg = `Player Confirmed! You are eligible to compete in the ${tourneyTitle}.\n\nPlease join the Lichess team using the link below to lock in your spot:\n\nhttps://lichess.org/team/ethchess-u1500`;
-
-  // Copy to clipboard
-  try {
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(confirmationMsg);
-      addToast(
-        'Confirmed & Message Copied!',
-        cleanHandle
-          ? `Approval message copied. Opening Telegram chat for @${cleanHandle}...`
-          : `Approved candidate! Confirmation message copied to clipboard.`,
-        'success'
-      );
-    }
-  } catch (err) {
-    console.warn('Clipboard copy error:', err);
+  if (copied) {
+    addToast(
+      'Confirmed & Message Copied!',
+      cleanHandle
+        ? `Approval message copied. Opening Telegram chat for @${cleanHandle}...`
+        : `Approved candidate! Confirmation message copied to clipboard.`,
+      'success'
+    );
+  } else {
+    addToast(
+      'Candidate Approved!',
+      `Candidate approved! (Clipboard access was blocked by browser).`,
+      'info'
+    );
   }
 
   if (tgWindow) {
