@@ -535,6 +535,8 @@ const props = defineProps<{
 const { getTournament, getParticipants, toggleManualOverride, updateParticipantStatus } = useTournaments();
 const { addToast } = useToast();
 
+const currentTournament = computed(() => getTournament(props.tournamentId));
+
 const searchQuery = ref('');
 const currentTab = ref<'all' | 'eligible' | 'rejected' | 'approved' | 'disapproved'>('all');
 const selectedParticipant = ref<Participant | null>(null);
