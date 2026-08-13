@@ -220,6 +220,121 @@ export async function fetchChessComUserStats(
   });
 }
 
+/**
+ * Bulk fetches Chess.com user stats in parallel chunks of 5 with a 150ms gap.
+ * Allows 200 Chess.com users to be fetched in ~6-8 seconds instead of 140+ seconds.
+ */
+export async function fetchChessComUsersBulk(
+  usernames: string[],
+  timeFormat: string = 'rapid'
+): Promise<Map<string, PlatformUserStats>> {
+  const result = new Map<string, PlatformUserStats>();
+  if (!usernames || usernames.length === 0) return result;
+
+  const unique = Array.from(new Set(usernames.map((u) => u.trim()).filter(Boolean)));
+  const chunkSize = 5;
+
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(async (username) => {
+        try {
+          const cleanUser = encodeURIComponent(username.trim().toLowerCase());
+          const profileRes = await fetch(`https://api.chess.com/pub/player/${cleanUser}`, {
+            headers: {
+              'User-Agent': 'ETHCHESS-TourneyFilter/1.0 (contact@ethchess.org)',
+            },
+            signal: AbortSignal.timeout(8000),
+          });
+
+          if (!profileRes.ok) {
+            const isClosed = profileRes.status === 404 || profileRes.status === 410;
+            result.set(username.toLowerCase(), {
+              verified: false,
+              currentRating: null,
+              peakRating: null,
+              gamesCount: 0,
+              joinedAt: '',
+              rawUsername: username,
+              isClosed: isClosed ? true : undefined,
+            });
+            return;
+          }
+
+          const profileData = await profileRes.json();
+          const isClosed = profileData.status === 'closed' || profileData.status === 'closed:fair_play_violations';
+          const joinedAtMs = (profileData.joined || 0) * 1000;
+          const joinedAt = joinedAtMs > 0 ? new Date(joinedAtMs).toISOString() : '';
+
+          let currentRating: number | null = null;
+          let peakRating: number | null = null;
+          let peakDate: string | undefined = undefined;
+          let gamesCount = 0;
+          let rd: number | undefined = undefined;
+          let lastPlayedAt: string | undefined = undefined;
+
+          try {
+            const statsRes = await fetch(`https://api.chess.com/pub/player/${cleanUser}/stats`, {
+              headers: {
+                'User-Agent': 'ETHCHESS-TourneyFilter/1.0 (contact@ethchess.org)',
+              },
+              signal: AbortSignal.timeout(8000),
+            });
+
+            if (statsRes.ok) {
+              const statsData = await statsRes.json();
+              const normFormat = (timeFormat || 'rapid').toLowerCase();
+              const key = `chess_${normFormat}`;
+              const perfData = statsData[key];
+
+              if (perfData) {
+                if (typeof perfData.last?.rating === 'number') currentRating = perfData.last.rating;
+                if (typeof perfData.best?.rating === 'number') peakRating = perfData.best.rating;
+                if (typeof perfData.best?.date === 'number' && perfData.best.date > 0) {
+                  peakDate = new Date(perfData.best.date * 1000).toISOString();
+                }
+                if (typeof perfData.last?.date === 'number' && perfData.last.date > 0) {
+                  lastPlayedAt = new Date(perfData.last.date * 1000).toISOString();
+                }
+                if (typeof perfData.last?.rd === 'number') rd = perfData.last.rd;
+
+                const record = perfData.record;
+                if (record) {
+                  gamesCount = (record.win || 0) + (record.loss || 0) + (record.draw || 0);
+                }
+              }
+            }
+          } catch {
+            // Stats fetch optional
+          }
+
+          result.set(username.toLowerCase(), {
+            verified: true,
+            currentRating,
+            peakRating: peakRating ?? currentRating,
+            peakDate,
+            gamesCount,
+            joinedAt,
+            rawUsername: username,
+            isClosed,
+            rd,
+            prov: (rd ?? 0) > 80,
+            lastPlayedAt,
+          });
+        } catch {
+          // Failed fetch
+        }
+      })
+    );
+
+    if (i + chunkSize < unique.length) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+
+  return result;
+}
+
 // ─── Lichess ──────────────────────────────────────────────────────────────────
 
 /**
