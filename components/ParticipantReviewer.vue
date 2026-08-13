@@ -722,7 +722,8 @@ async function handleAcceptAndConfirm(p: Participant) {
     origin: { y: 0.7 },
   });
 
-  const confirmationMsg = `Hi @${cleanHandle || 'player'}! You are officially APPROVED for the ETHCHESS Tournament! See you in the arena!`;
+  const tourneyTitle = currentTournament.value?.title || 'U1500 Blitz Championship';
+  const confirmationMsg = `Player Confirmed! You are eligible to compete in the ${tourneyTitle}.\n\nPlease join the Lichess team using the link below to lock in your spot:\n\nhttps://lichess.org/team/ethchess-u1500`;
 
   // Copy to clipboard
   try {
