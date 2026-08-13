@@ -58,14 +58,14 @@
           <Loader2 class="spin-icon" :size="28" />
         </div>
         <div class="progress-text">
-          <p class="progress-title">Verifying Live Chess Ratings & Account Ages...</p>
+          <p class="progress-title">Processing & Verifying Live Ratings...</p>
           <p class="progress-stats">
-            Inspecting public API for {{ progressCompleted }} / {{ progressTotal }} participants
-            ({{ progressPercent }}%)
+            <span v-if="progressTotal > 0">Inspecting public API for {{ progressCompleted }} / {{ progressTotal }} participants ({{ progressPercent }}%)</span>
+            <span v-else>Querying Chess.com & Lichess public APIs and calculating Trust Scores...</span>
           </p>
         </div>
         <div class="progress-bar-bg">
-          <div class="progress-bar-fill" :style="{ width: `${progressPercent}%` }"></div>
+          <div class="progress-bar-fill" :style="{ width: progressTotal > 0 ? `${progressPercent}%` : '100%' }"></div>
         </div>
       </div>
     </div>
@@ -141,12 +141,34 @@ async function processFile(file: File) {
     const tourney = getTournament(props.tournamentId);
     if (!tourney) return;
 
-    const parsed = await processCsvFile(props.tournamentId, text);
+    addToast('Processing & Verifying', `Processing CSV, querying Chess.com & Lichess APIs, and saving entries...`, 'info');
 
-    addToast('CSV Ingested & Saved', `Successfully parsed and stored ${parsed.length} entries from ${file.name} to database.`, 'success');
+    // Server-side processing & DB ingestion (locks UI until finished)
+    const serverMapped = await processCsvFile(props.tournamentId, text);
+    if (serverMapped && serverMapped.length > 0) {
+      emit('parsed', serverMapped.length);
+      addToast('Sync Complete', `Successfully processed & verified ${serverMapped.length} entries from ${file.name}.`, 'success');
+      return;
+    }
+
+    // Client fallback if server route returns empty:
+    const parsed = parseCsvContent(text, props.tournamentId, tourney.rules, tourney.timeControl);
+    setParticipants(props.tournamentId, parsed);
     emit('parsed', parsed.length);
 
-    addToast('Live Ratings Synced', 'Public API ratings verification process complete.', 'info');
+    if (parsed.length > 0) {
+      isProcessing.value = false;
+      isVerifying.value = true;
+      progressTotal.value = parsed.length;
+      progressCompleted.value = 0;
+
+      await verifyAllParticipants(props.tournamentId, (completed, total) => {
+        progressCompleted.value = completed;
+        progressTotal.value = total;
+      });
+    }
+
+    addToast('Verification Complete', 'Live ratings and Trust Scores verified.', 'info');
   } catch (err: any) {
     addToast('Parsing Error', err?.message || 'Failed to read CSV file.', 'error');
   } finally {
@@ -170,14 +192,37 @@ async function handleLoadDefaultCsv() {
       // Fallback
     }
 
-    const parsed = await loadDefaultCsvData(props.tournamentId, csvText || undefined);
-
     addToast(
-      'Default Responses Loaded',
-      `Parsed and verified ${parsed.length} submissions from ETHCHESS Under 1500 form responses.`,
-      'success'
+      'Processing Default CSV',
+      `Parsing default form responses, querying platform APIs, and evaluating Trust Scores...`,
+      'info'
     );
+
+    // Server-side processing & DB ingestion (locks UI until finished)
+    const serverMapped = await processCsvFile(props.tournamentId, csvText || undefined as any);
+    if (serverMapped && serverMapped.length > 0) {
+      emit('parsed', serverMapped.length);
+      addToast('Default CSV Loaded', `Loaded & verified ${serverMapped.length} form submissions.`, 'success');
+      return;
+    }
+
+    // Fallback client load:
+    const parsed = loadDefaultCsvData(props.tournamentId, csvText || undefined);
     emit('parsed', parsed.length);
+
+    if (parsed.length > 0) {
+      isProcessing.value = false;
+      isVerifying.value = true;
+      progressTotal.value = parsed.length;
+      progressCompleted.value = 0;
+
+      await verifyAllParticipants(props.tournamentId, (completed, total) => {
+        progressCompleted.value = completed;
+        progressTotal.value = total;
+      });
+    }
+
+    addToast('Verification Complete', 'Ratings, account ages, and Trust Scores verified live.', 'info');
   } catch (err: any) {
     addToast('Error', err?.message || 'Could not load default CSV', 'error');
   } finally {

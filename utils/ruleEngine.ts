@@ -74,15 +74,37 @@ export function computePlatformTrustScore(
   const rating = stats.currentRating ?? maxRatingLimit;
   const peak = stats.peakRating ?? rating;
   const isProv = stats.prov ?? false;
-  const rd = stats.rd ?? (isProv ? 200 : 80);
+
+  // Default RD for unrated or missing API RD: 290 for provisional, 350 for unrated/unknown
+  const defaultRd = isProv ? 290 : 350;
+  const rawRd = stats.rd ?? defaultRd;
   const games = stats.gamesCount ?? 0;
 
-  // Calculate peak recency weight
+  // Chess.com Inactivity Buffer (§8.2): +5 RD per inactive month (30 days)
+  let inactivityBuffer = 0;
+  if (platform === 'chessCom' && stats.lastPlayedAt) {
+    const lastPlayedMs = new Date(stats.lastPlayedAt).getTime();
+    if (!isNaN(lastPlayedMs) && lastPlayedMs > 0) {
+      const daysInactive = Math.max(0, (Date.now() - lastPlayedMs) / (1000 * 60 * 60 * 24));
+      inactivityBuffer = Math.floor(daysInactive / 30) * 5;
+    }
+  }
+  const adjustedApiRd = rawRd + inactivityBuffer;
+
+  // Peak recency weight calculation (§4.3 & §7.3)
   let monthsSincePeak = 0;
   if (stats.peakDate) {
     const peakMs = new Date(stats.peakDate).getTime();
     if (!isNaN(peakMs) && peakMs > 0) {
       monthsSincePeak = Math.max(0, (Date.now() - peakMs) / (1000 * 60 * 60 * 24 * 30.4375));
+    }
+  } else if (peak > rating && stats.joinedAt) {
+    // If peakDate is unknown but peak > rating, estimate recency from account age / 2
+    const joinedMs = new Date(stats.joinedAt).getTime();
+    if (!isNaN(joinedMs) && joinedMs > 0) {
+      monthsSincePeak = Math.max(0, ((Date.now() - joinedMs) / (1000 * 60 * 60 * 24 * 30.4375)) / 2);
+    } else {
+      monthsSincePeak = 6;
     }
   }
 
@@ -91,7 +113,7 @@ export function computePlatformTrustScore(
   const effectiveRating = Math.max(rating, peakContribution);
 
   const gameCountFactor = getGameCountFactor(games);
-  const effectiveRd = rd * gameCountFactor;
+  const effectiveRd = adjustedApiRd * gameCountFactor;
 
   const zScore = (maxRatingLimit - effectiveRating) / (effectiveRd || 1);
   const rawProb = standardNormalCdf(zScore);
@@ -108,6 +130,9 @@ export function computePlatformTrustScore(
   if (effectiveRating > rating) {
     explanation += ` Peak (${peak}) weighted at ${Math.round(peakWeight * 100)}% (${Math.round(monthsSincePeak)} mo ago).`;
   }
+  if (inactivityBuffer > 0) {
+    explanation += ` Inactivity buffer +${inactivityBuffer} RD applied.`;
+  }
   if (gameCountFactor > 1) {
     explanation += ` Expanded uncertainty due to ${games} total games (factor ×${gameCountFactor}).`;
   }
@@ -122,7 +147,7 @@ export function computePlatformTrustScore(
     peakContribution: Math.round(peakContribution),
     verdictBand,
     explanation,
-    rd,
+    rd: adjustedApiRd,
     gamesCount: games,
     lastPlayedAt: stats.lastPlayedAt,
     isProvisional: isProv,
@@ -322,7 +347,43 @@ export function evaluateParticipantRules(
     evaluationFailed = true;
   }
 
+  // ─── STEP 4: TRUST SCORE CALCULATION & RESCUE LOGIC ──────────────────────
+  const cTrust = isChessComVerified ? computePlatformTrustScore(chessComStats, limits.chessComMaxRating, limitsInput?.peakWindowMonths ?? 24, 'chessCom') : undefined;
+  const lTrust = isLichessVerified ? computePlatformTrustScore(lichessStats, limits.lichessMaxRating, limitsInput?.peakWindowMonths ?? 24, 'lichess') : undefined;
+
+  let trustDetails = lTrust || cTrust;
+  if (cTrust && lTrust) {
+    const cOver = (chessComStats?.currentRating ?? 0) > limits.chessComMaxRating || (chessComStats?.peakRating ?? 0) > limits.chessComMaxPeak;
+    const lOver = (lichessStats?.currentRating ?? 0) > limits.lichessMaxRating || (lichessStats?.peakRating ?? 0) > limits.lichessMaxPeak;
+
+    if (cOver || lOver) {
+      trustDetails = cTrust.score < lTrust.score ? cTrust : lTrust;
+    } else {
+      trustDetails = cTrust.effectiveRd <= lTrust.effectiveRd ? cTrust : lTrust;
+    }
+  }
+
+  const trustScore = trustDetails?.score;
+  const minScoreThreshold = limitsInput?.minimumTrustScore ?? 65;
+
+  const hasUnverifiedHandleError = rejectionReasons.some((r) => r.includes('does not exist or could not be verified') || r.includes('No Chess.com or Lichess handle'));
+  const hasBanOrTos = Boolean(lichessStats?.tosViolation || chessComStats?.isClosed);
+
+  const canBeRescued = !hasBanOrTos && !hasUnverifiedHandleError;
+
+  if (trustScore !== undefined) {
+    if (evaluationFailed && canBeRescued && trustScore >= minScoreThreshold) {
+      // RESCUE LOGIC: Candidate has valid verified handle(s) & no bans. Trust Score >= threshold rescues activity or ceiling failures!
+      evaluationFailed = false;
+      rejectionReasons.push(`🛡️ Rescued by Trust Score (${trustScore}/100 >= ${minScoreThreshold} threshold) despite rating/activity limits.`);
+    } else if (!evaluationFailed && trustScore < minScoreThreshold) {
+      // LOW TRUST REJECTION: candidate passed raw ceilings, but unreliability drops score below threshold
+      evaluationFailed = true;
+      rejectionReasons.push(`Trust Score (${trustScore}/100) is below minimum required threshold of ${minScoreThreshold}.`);
+    }
+  }
+
   const systemVerdict: 'ELIGIBLE' | 'REJECTED' = evaluationFailed ? 'REJECTED' : 'ELIGIBLE';
 
-  return { systemVerdict, rejectionReasons };
+  return { systemVerdict, rejectionReasons, trustScore, trustDetails };
 }

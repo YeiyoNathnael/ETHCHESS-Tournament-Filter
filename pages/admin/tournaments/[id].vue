@@ -64,6 +64,14 @@
             </div>
           </div>
         </div>
+
+        <div class="summary-item trust-summary-item">
+          <Gauge :size="16" class="icon-jade" />
+          <div>
+            <div class="sub-label">Min Trust Threshold</div>
+            <div class="val-text highlight-trust">≥ {{ tournament.rules?.minimumTrustScore ?? 65 }} / 100</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -266,6 +274,28 @@
                 <span class="tweak-hint">Filters new Lichess accounts.</span>
               </div>
             </div>
+
+            <!-- Global Trust Score Threshold Slider -->
+            <div class="tweak-group trust-tweak-group">
+              <div class="tweak-header">
+                <label class="tweak-label flex-label">
+                  <Gauge :size="16" class="icon-jade" />
+                  <span>Minimum Trust Score Threshold</span>
+                </label>
+                <span class="tweak-value trust-badge-val">≥ {{ tempRules.minimumTrustScore }} / 100</span>
+              </div>
+              <input
+                v-model.number="tempRules.minimumTrustScore"
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                class="range-slider"
+              />
+              <span class="tweak-hint">
+                Candidates failing raw ceiling rules but having Trust Score ≥ {{ tempRules.minimumTrustScore }} are rescued to ELIGIBLE.
+              </span>
+            </div>
           </div>
 
           <div class="drawer-footer">
@@ -361,6 +391,7 @@ const showCsvUploader = ref(false);
 const drawerTab = ref<'chessCom' | 'lichess'>('chessCom');
 
 const tempRules = reactive({
+  minimumTrustScore: 65,
   chessCom: {
     maxRating: 1500,
     maxPeakRating: 1600,
@@ -382,6 +413,7 @@ watch(
   tournament,
   (newVal) => {
     if (newVal) {
+      tempRules.minimumTrustScore = newVal.rules.minimumTrustScore ?? 65;
       const c = newVal.rules.chessCom || {
         maxRating: newVal.rules.chessComMaxRating ?? 1500,
         maxPeakRating: newVal.rules.chessComMaxPeak ?? 1600,
@@ -402,6 +434,7 @@ watch(
 );
 
 function resetRules() {
+  tempRules.minimumTrustScore = 65;
   tempRules.chessCom = {
     maxRating: 1500,
     maxPeakRating: 1600,
@@ -430,6 +463,7 @@ function handleApplyRules() {
   if (!tournament.value) return;
 
   const finalRules: QualificationRules = {
+    minimumTrustScore: tempRules.minimumTrustScore,
     chessCom: { ...tempRules.chessCom },
     lichess: { ...tempRules.lichess },
     chessComMaxRating: tempRules.chessCom.maxRating,

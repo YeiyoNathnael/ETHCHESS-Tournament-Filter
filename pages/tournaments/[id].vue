@@ -255,7 +255,7 @@ const lichessRules = computed(() => {
 });
 
 const approvedParticipants = computed(() => {
-  return getParticipants(tournamentId).filter((p) => p.status === 'APPROVED' || p.verdict === 'ELIGIBLE');
+  return getParticipants(tournamentId).filter((p) => p.status === 'APPROVED');
 });
 
 function getTrustBadgeClass(score?: number) {

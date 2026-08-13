@@ -319,6 +319,28 @@
                 <span class="field-hint">Filters throwaway Lichess accounts</span>
               </div>
             </div>
+
+            <!-- Global Minimum Trust Score Threshold Setup -->
+            <div class="trust-threshold-setup-box margin-top-sm">
+              <div class="tweak-header">
+                <label class="form-label flex-label">
+                  <Gauge :size="16" class="icon-jade" />
+                  <span>Minimum Trust Score Threshold *</span>
+                </label>
+                <span class="threshold-val-badge">≥ {{ form.rules.minimumTrustScore }} / 100</span>
+              </div>
+              <input
+                v-model.number="form.rules.minimumTrustScore"
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                class="form-range-slider"
+              />
+              <span class="field-hint">
+                Candidates with rating ceiling or activity limit exceedances whose statistical Trust Score is ≥ {{ form.rules.minimumTrustScore }} will be rescued to ELIGIBLE.
+              </span>
+            </div>
           </div>
 
           <!-- Actions -->
@@ -413,6 +435,7 @@ const form = reactive({
   coverImage: imagePresets[0].url,
   timeControl: 'Rapid' as TimeControl,
   rules: {
+    minimumTrustScore: 65,
     chessCom: {
       maxRating: 1500,
       maxPeakRating: 1600,
@@ -444,6 +467,7 @@ async function handleSubmit() {
   if (!form.title.trim()) return;
 
   const finalRules: QualificationRules = {
+    minimumTrustScore: form.rules.minimumTrustScore || 65,
     chessCom: { ...form.rules.chessCom },
     lichess: { ...form.rules.lichess },
     chessComMaxRating: form.rules.chessCom.maxRating,

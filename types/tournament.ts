@@ -69,6 +69,7 @@ export interface Participant {
   trustDetails?: TrustScoreDetails;
   rejectionReasons: string[];
   manualOverride: boolean;
+  isRescued?: boolean;
   status: ParticipantStatus;
   verifiedAt?: string;
   isVerifying?: boolean;

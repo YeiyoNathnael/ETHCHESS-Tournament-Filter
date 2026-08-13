@@ -3,7 +3,7 @@ import { db, ensureTablesExist } from '~/server/db';
 import { tournaments, participants } from '~/server/db/schema';
 import { eq } from 'drizzle-orm';
 import { parseAndDeduplicateCsv } from '~/utils/csvParser';
-import { fetchChessComUserStats, fetchLichessUserStats, type PlatformUserStats } from '~/utils/chessApi';
+import { fetchChessComUserStats, fetchLichessUserStats, fetchLichessUsersBulk, type PlatformUserStats } from '~/utils/chessApi';
 import { evaluateParticipantRules, type TournamentRuleLimits } from '~/utils/ruleEngine';
 
 export default defineEventHandler(async (event) => {
@@ -86,83 +86,102 @@ export default defineEventHandler(async (event) => {
     lichessMaxPeak: tournament.lichessMaxPeak,
     lichessMinAgeMonths: tournament.lichessMinAgeMonths,
     lichessMinGames: tournament.lichessMinGames,
+    minimumTrustScore: tournament.minimumTrustScore ?? 65,
   };
 
   // Clear previous participants for this tournament to re-process cleanly
   await db.delete(participants).where(eq(participants.tournamentId, id));
 
-  // Process in concurrent chunks of 5
-  const chunkSize = 5;
   const processedResults = [];
   let eligibleCount = 0;
   let rejectedCount = 0;
 
-  for (let i = 0; i < rawList.length; i += chunkSize) {
-    const chunk = rawList.slice(i, i + chunkSize);
+  console.log(`[Process-CSV] Processing ${rawList.length} candidates for Tournament ID: ${id}`);
 
-    // Throttle slightly to respect Lichess & Chess.com rate limits
-    if (i > 0) {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+  // ── Step 1: Bulk fetch ALL Lichess profiles in a single POST /api/users ────
+  const lichessUsernames = rawList
+    .map((r) => r.rawLichessUser)
+    .filter((u): u is string => !!u);
+
+  console.log(`[Process-CSV] Bulk fetching ${lichessUsernames.length} Lichess handles via POST /api/users...`);
+  const lichessBulkProfiles = await fetchLichessUsersBulk(lichessUsernames, 'rapid');
+  console.log(`[Process-CSV] Lichess bulk fetch complete. Received ${lichessBulkProfiles.size} profile responses.`);
+
+  // ── Step 2: Fetch rating history per Lichess user (sequential, 1 at a time) ─
+  const lichessFullStats = new Map<string, PlatformUserStats>();
+  for (const username of lichessUsernames) {
+    const baseStats = lichessBulkProfiles.get(username.toLowerCase());
+    if (baseStats?.verified) {
+      const withHistory = await fetchLichessUserStats(username, 'rapid');
+      lichessFullStats.set(username.toLowerCase(), withHistory);
+    }
+  }
+
+  // ── Step 3: Fetch Chess.com stats sequentially & assemble records ─────────
+  console.log(`[Process-CSV] Evaluating rule matrix & Trust Scores for ${rawList.length} candidates...`);
+  for (const raw of rawList) {
+    let chessComStats: PlatformUserStats | null = null;
+    let lichessStats: PlatformUserStats | null = null;
+
+    if (raw.rawChessComUser) {
+      chessComStats = await fetchChessComUserStats(raw.rawChessComUser, 'rapid');
+    }
+    if (raw.rawLichessUser) {
+      lichessStats = lichessFullStats.get(raw.rawLichessUser.toLowerCase()) ??
+        lichessBulkProfiles.get(raw.rawLichessUser.toLowerCase()) ??
+        null;
     }
 
-    const chunkResults = await Promise.all(
-      chunk.map(async (raw) => {
-        let chessComStats: PlatformUserStats | null = null;
-        let lichessStats: PlatformUserStats | null = null;
-
-        // Eligibility screening is strictly evaluated against Rapid ratings & Rapid peaks
-        if (raw.rawChessComUser) {
-          chessComStats = await fetchChessComUserStats(raw.rawChessComUser, 'rapid');
-        }
-        if (raw.rawLichessUser) {
-          lichessStats = await fetchLichessUserStats(raw.rawLichessUser, 'rapid');
-        }
-
-        const ruleRes = evaluateParticipantRules(
-          limits,
-          raw.rawChessComUser,
-          chessComStats,
-          raw.rawLichessUser,
-          lichessStats
-        );
-
-        if (ruleRes.systemVerdict === 'ELIGIBLE') {
-          eligibleCount++;
-        } else {
-          rejectedCount++;
-        }
-
-        const newParticipant = {
-          tournamentId: id,
-          telegramUsername: raw.telegramUsername,
-          rawChessComUser: raw.rawChessComUser,
-          rawLichessUser: raw.rawLichessUser,
-          chessComVerified: chessComStats?.verified ?? false,
-          chessComCurrentRating: chessComStats?.currentRating ?? null,
-          chessComPeakRating: chessComStats?.peakRating ?? null,
-          chessComGamesCount: chessComStats?.gamesCount ?? 0,
-          chessComJoinedAt: chessComStats?.joinedAt ?? null,
-          chessComClosed: chessComStats?.isClosed ?? false,
-          lichessVerified: lichessStats?.verified ?? false,
-          lichessCurrentRating: lichessStats?.currentRating ?? null,
-          lichessPeakRating: lichessStats?.peakRating ?? null,
-          lichessGamesCount: lichessStats?.gamesCount ?? 0,
-          lichessJoinedAt: lichessStats?.joinedAt ?? null,
-          lichessTosViolation: lichessStats?.tosViolation ?? false,
-          systemVerdict: ruleRes.systemVerdict,
-          rejectionReasons: ruleRes.rejectionReasons,
-          organizerStatus: 'PENDING' as const,
-          organizerNotes: null,
-          confirmedAt: null,
-          submittedAt: raw.submittedAt,
-        };
-
-        return newParticipant;
-      })
+    const ruleRes = evaluateParticipantRules(
+      limits,
+      raw.rawChessComUser,
+      chessComStats,
+      raw.rawLichessUser,
+      lichessStats
     );
 
-    processedResults.push(...chunkResults);
+    if (ruleRes.systemVerdict === 'ELIGIBLE') {
+      eligibleCount++;
+    } else {
+      rejectedCount++;
+    }
+
+    const newParticipant = {
+      tournamentId: id,
+      telegramUsername: raw.telegramUsername,
+      rawChessComUser: raw.rawChessComUser,
+      rawLichessUser: raw.rawLichessUser,
+      chessComVerified: chessComStats?.verified ?? false,
+      chessComCurrentRating: chessComStats?.currentRating ?? null,
+      chessComPeakRating: chessComStats?.peakRating ?? null,
+      chessComPeakDate: chessComStats?.peakDate ?? null,
+      chessComGamesCount: chessComStats?.gamesCount ?? 0,
+      chessComJoinedAt: chessComStats?.joinedAt ?? null,
+      chessComLastPlayedAt: chessComStats?.lastPlayedAt ?? null,
+      chessComRd: chessComStats?.rd ?? null,
+      chessComProv: chessComStats?.prov ?? null,
+      chessComClosed: chessComStats?.isClosed ?? null,
+      lichessVerified: lichessStats?.verified ?? false,
+      lichessCurrentRating: lichessStats?.currentRating ?? null,
+      lichessPeakRating: lichessStats?.peakRating ?? null,
+      lichessPeakDate: lichessStats?.peakDate ?? null,
+      lichessGamesCount: lichessStats?.gamesCount ?? 0,
+      lichessJoinedAt: lichessStats?.joinedAt ?? null,
+      lichessLastPlayedAt: lichessStats?.lastPlayedAt ?? null,
+      lichessRd: lichessStats?.rd ?? null,
+      lichessProv: lichessStats?.prov ?? null,
+      lichessTosViolation: lichessStats?.tosViolation ?? null,
+      systemVerdict: ruleRes.systemVerdict,
+      rejectionReasons: ruleRes.rejectionReasons,
+      organizerStatus: 'PENDING' as const,
+      organizerNotes: null,
+      confirmedAt: null,
+      submittedAt: raw.submittedAt,
+    };
+
+    processedResults.push(newParticipant);
   }
+
 
   // Bulk insert into SQLite database if items exist
   let savedParticipants: (typeof participants.$inferSelect)[] = [];

@@ -411,3 +411,52 @@ a:hover {
 .data-table tr.row-approved {
   background: rgba(230, 247, 240, 0.2);
 }
+
+/* Trust Threshold UI Controls */
+.trust-threshold-badge {
+  background: rgba(15, 82, 87, 0.1) !important;
+  color: var(--color-jade-deep) !important;
+  border: 1px solid rgba(15, 82, 87, 0.25) !important;
+  font-weight: 700 !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.trust-threshold-setup-box {
+  background: var(--color-cream-surface, #FAF7F2);
+  border: 1px solid rgba(15, 82, 87, 0.2);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-top: 16px;
+}
+
+.threshold-val-badge {
+  font-family: 'Space Grotesk', monospace;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-jade-deep, #0F5257);
+  background: rgba(15, 82, 87, 0.1);
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(15, 82, 87, 0.2);
+}
+
+.form-range-slider, .range-slider {
+  width: 100%;
+  accent-color: var(--color-jade-primary, #00A86B);
+  height: 6px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.trust-summary-item {
+  border-left: 2px solid var(--color-jade-primary, #00A86B);
+  padding-left: 12px;
+}
+
+.highlight-trust {
+  font-family: 'Space Grotesk', monospace;
+  font-weight: 700;
+  color: var(--color-jade-deep, #0F5257);
+}

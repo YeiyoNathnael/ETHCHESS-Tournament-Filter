@@ -138,12 +138,12 @@ export function parseCsvContent(
   const seenKeys = new Set<string>();
 
   results.data.forEach((row, index) => {
-    const timestamp = row['Timestamp'] || row['timestamp'] || '';
-    const telegramRaw = row['Telegram Username (@)'] || row['Telegram Username'] || row['telegram'] || '';
-    const chessComUserRaw = row['chess.com Username'] || row['Chess.com Username'] || row['chess.com'] || '';
-    const chessComRatingRaw = row['chess.com Rapid Rating'] || row['Chess.com Rapid Rating'] || row['chess.com rating'] || '';
-    const lichessUserRaw = row['lichess username'] || row['Lichess username'] || row['lichess'] || '';
-    const lichessRatingRaw = row['lichess rapid rating'] || row['Lichess rapid rating'] || row['lichess rating'] || '';
+    const timestamp = getColumnValue(row, ['timestamp', 'date']) || '';
+    const telegramRaw = getColumnValue(row, ['telegram']) || '';
+    const chessComUserRaw = getColumnValue(row, ['chess.com username', 'chess.com', 'chesscom']) || '';
+    const chessComRatingRaw = getColumnValue(row, ['chess.com rapid rating', 'chess.com rating', 'chess rating']) || '';
+    const lichessUserRaw = getColumnValue(row, ['lichess username', 'lichess']) || '';
+    const lichessRatingRaw = getColumnValue(row, ['lichess rapid rating', 'lichess rating']) || '';
 
     const telegramHandle = cleanTelegramHandle(telegramRaw);
     const chessComUsername = cleanHandle(chessComUserRaw);

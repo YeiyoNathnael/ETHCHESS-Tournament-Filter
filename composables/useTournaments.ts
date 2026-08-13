@@ -59,6 +59,7 @@ const defaultRules: QualificationRules = {
   lichessMaxPeak: 1600,
   lichessMinGames: 30,
   lichessMinAgeMonths: 3,
+  minimumTrustScore: 65,
 };
 
 const tournaments = ref<Tournament[]>([]);
@@ -88,38 +89,51 @@ function mapDbTournamentToFrontend(dbT: any): Tournament {
       lichessMaxPeak: dbT.lichessMaxPeak ?? 1600,
       lichessMinGames: dbT.lichessMinGames ?? 30,
       lichessMinAgeMonths: dbT.lichessMinAgeMonths ?? 3,
+      minimumTrustScore: dbT.minimumTrustScore ?? 65,
     },
     status: 'UPCOMING',
     createdAt: dbT.createdAt || new Date().toISOString(),
   };
 }
 
-function mapDbParticipantToFrontend(dbP: any): Participant {
-  return {
+function mapDbParticipantToFrontend(dbP: any, tournamentRules?: QualificationRules): Participant {
+  const p: Participant = {
     id: String(dbP.id),
     tournamentId: String(dbP.tournamentId),
-    telegramHandle: dbP.telegramUsername || '',
-    chessComUsername: dbP.rawChessComUser || '',
-    chessComRating: dbP.chessComCurrentRating ?? null,
+    telegramHandle: dbP.telegramUsername || dbP.telegramHandle || '',
+    chessComUsername: dbP.rawChessComUser || dbP.chessComUsername || '',
+    chessComRating: dbP.chessComCurrentRating ?? dbP.chessComRating ?? null,
     chessComPeakRating: dbP.chessComPeakRating ?? null,
+    chessComPeakDate: dbP.chessComPeakDate ?? undefined,
     chessComGamesCount: dbP.chessComGamesCount ?? 0,
     chessComJoinedAt: dbP.chessComJoinedAt ?? '',
-    chessComClosed: dbP.chessComClosed ?? false,
-    lichessUsername: dbP.rawLichessUser || '',
-    lichessRating: dbP.lichessCurrentRating ?? null,
+    chessComLastPlayedAt: dbP.chessComLastPlayedAt ?? undefined,
+    chessComRd: dbP.chessComRd ?? undefined,
+    chessComProv: dbP.chessComProv ?? undefined,
+    chessComClosed: dbP.chessComClosed ?? undefined,
+    lichessUsername: dbP.rawLichessUser || dbP.lichessUsername || '',
+    lichessRating: dbP.lichessCurrentRating ?? dbP.lichessRating ?? null,
     lichessPeakRating: dbP.lichessPeakRating ?? null,
+    lichessPeakDate: dbP.lichessPeakDate ?? undefined,
     lichessGamesCount: dbP.lichessGamesCount ?? 0,
     lichessJoinedAt: dbP.lichessJoinedAt ?? '',
-    lichessTosViolation: dbP.lichessTosViolation ?? false,
-    verdict: dbP.systemVerdict || 'ELIGIBLE',
+    lichessLastPlayedAt: dbP.lichessLastPlayedAt ?? undefined,
+    lichessRd: dbP.lichessRd ?? undefined,
+    lichessProv: dbP.lichessProv ?? undefined,
+    lichessTosViolation: dbP.lichessTosViolation ?? undefined,
+    verdict: dbP.systemVerdict || dbP.verdict || 'ELIGIBLE',
     rejectionReasons: typeof dbP.rejectionReasons === 'string'
       ? JSON.parse(dbP.rejectionReasons)
       : (Array.isArray(dbP.rejectionReasons) ? dbP.rejectionReasons : []),
-    manualOverride: false,
-    status: dbP.organizerStatus || 'PENDING',
+    manualOverride: dbP.organizerStatus === 'APPROVED' || dbP.manualOverride === true,
+    status: dbP.organizerStatus || dbP.status || 'PENDING',
     submittedAt: dbP.submittedAt || undefined,
-    verifiedAt: dbP.confirmedAt || undefined,
+    verifiedAt: dbP.confirmedAt || dbP.verifiedAt || undefined,
   };
+
+  const tourney = tournaments.value.find((t) => String(t.id) === String(p.tournamentId));
+  const rules = tournamentRules || tourney?.rules || defaultRules;
+  return evaluateParticipant(p, rules);
 }
 
 export function useTournaments() {
@@ -164,7 +178,7 @@ export function useTournaments() {
         }
 
         if (res.participants) {
-          const mappedParticipants = res.participants.map(mapDbParticipantToFrontend);
+          const mappedParticipants = res.participants.map((p) => mapDbParticipantToFrontend(p, mappedTourney.rules));
           participantsMap.value[String(mappedTourney.id)] = mappedParticipants;
           participantsMap.value[id] = mappedParticipants;
         }
@@ -309,7 +323,8 @@ export function useTournaments() {
           body: { csvContent: csvText },
         });
         if (res && res.success && Array.isArray(res.participants)) {
-          const mapped = res.participants.map(mapDbParticipantToFrontend);
+          const tourney = getTournament(tournamentId);
+          const mapped = res.participants.map((p) => mapDbParticipantToFrontend(p, tourney?.rules));
           participantsMap.value[tournamentId] = mapped;
           return mapped;
         }
@@ -325,9 +340,14 @@ export function useTournaments() {
     return parsed;
   };
 
-  const loadDefaultCsvData = async (tournamentId: string, rawCsvText?: string): Promise<Participant[]> => {
+  const loadDefaultCsvData = (tournamentId: string, rawCsvText?: string): Participant[] => {
+    const tourney = getTournament(tournamentId);
+    const rules = tourney?.rules || defaultRules;
+    const timeControl = tourney?.timeControl || 'Rapid';
     const csvContent = rawCsvText || defaultCSVRaw;
-    return await processCsvFile(tournamentId, csvContent);
+    const parsed = parseCsvContent(csvContent, tournamentId, rules, timeControl);
+    participantsMap.value[tournamentId] = parsed;
+    return parsed;
   };
 
   const verifyAllParticipants = async (

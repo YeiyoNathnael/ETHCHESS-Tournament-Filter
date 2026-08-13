@@ -8,6 +8,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     tursoDatabaseUrl: process.env.TURSO_DATABASE_URL || process.env.NUXT_TURSO_DATABASE_URL || 'file:local.db',
     tursoAuthToken: process.env.TURSO_AUTH_TOKEN || process.env.NUXT_TURSO_AUTH_TOKEN || '',
+    lichessToken: process.env.LICHESS_TOKEN || process.env.NUXT_LICHESS_TOKEN || '',
   },
   css: ['~/assets/css/main.css'],
   vite: {

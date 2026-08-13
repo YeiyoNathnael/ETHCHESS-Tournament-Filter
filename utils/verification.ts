@@ -57,21 +57,35 @@ export function evaluateParticipant(
       3,
   };
 
-  const hasChessComHandle = !!participant.chessComUsername;
-  const hasLichessHandle = !!participant.lichessUsername;
+  const hasChessComHandle = !!participant.chessComUsername && participant.chessComUsername.trim().length > 0;
+  const hasLichessHandle = !!participant.lichessUsername && participant.lichessUsername.trim().length > 0;
 
-  // We consider an account verified if its rating is populated (or explicitly verified)
-  const isChessComVerified = hasChessComHandle && (participant.chessComRating !== null || participant.chessComGamesCount! > 0);
-  const isLichessVerified = hasLichessHandle && (participant.lichessRating !== null || participant.lichessGamesCount! > 0);
+  const isChessComVerified = hasChessComHandle;
+  const isLichessVerified = hasLichessHandle;
 
-  // Immediate ToS / Fair Play bans
-  if (participant.lichessTosViolation) {
-    rejectionReasons.push('Lichess Terms of Service (ToS) Violation detected (account flagged by Lichess engine)');
-    return { ...participant, rejectionReasons, verdict: 'REJECTED' };
-  }
-  if (participant.chessComClosed) {
-    rejectionReasons.push('Chess.com account closed or flagged for Fair Play violation');
-    return { ...participant, rejectionReasons, verdict: 'REJECTED' };
+  // Immediate ToS / Fair Play / Closed Account Rejection
+  if (participant.lichessTosViolation || participant.chessComClosed) {
+    if (participant.lichessTosViolation) {
+      rejectionReasons.push('Lichess Terms of Service (ToS) Violation detected (account flagged or closed by Lichess).');
+    }
+    if (participant.chessComClosed) {
+      rejectionReasons.push('Chess.com account closed, blocked, or flagged for Fair Play / Terms of Service violation.');
+    }
+    const trustDetails: TrustScoreDetails = {
+      score: 0,
+      zScore: -9.99,
+      effectiveRating: 9999,
+      effectiveRd: 0,
+      gameCountFactor: 1,
+      peakWeight: 1,
+      peakContribution: 9999,
+      verdictBand: 'REJECT',
+      explanation: 'Account flagged, closed, or banned for Terms of Service / Fair Play violation.',
+      rd: 0,
+      gamesCount: 0,
+      platform: participant.lichessTosViolation ? 'lichess' : 'chessCom',
+    };
+    return { ...participant, rejectionReasons, verdict: 'REJECTED', trustScore: 0, trustDetails };
   }
 
   let evaluationFailed = false;
@@ -228,8 +242,8 @@ export function evaluateParticipant(
   // Compute Trust Score details
   const cTrust = isChessComVerified ? computePlatformTrustScore({
     verified: true,
-    currentRating: participant.chessComRating ?? null,
-    peakRating: participant.chessComPeakRating ?? null,
+    currentRating: participant.chessComRating ?? chessRules.maxRating,
+    peakRating: participant.chessComPeakRating ?? participant.chessComRating ?? chessRules.maxRating,
     peakDate: participant.chessComPeakDate,
     gamesCount: participant.chessComGamesCount ?? 0,
     joinedAt: participant.chessComJoinedAt ?? '',
@@ -241,8 +255,8 @@ export function evaluateParticipant(
 
   const lTrust = isLichessVerified ? computePlatformTrustScore({
     verified: true,
-    currentRating: participant.lichessRating ?? null,
-    peakRating: participant.lichessPeakRating ?? null,
+    currentRating: participant.lichessRating ?? lichessRules.maxRating,
+    peakRating: participant.lichessPeakRating ?? participant.lichessRating ?? lichessRules.maxRating,
     peakDate: participant.lichessPeakDate,
     gamesCount: participant.lichessGamesCount ?? 0,
     joinedAt: participant.lichessJoinedAt ?? '',
@@ -254,12 +268,50 @@ export function evaluateParticipant(
 
   let trustDetails = lTrust || cTrust;
   if (cTrust && lTrust) {
-    trustDetails = cTrust.score < lTrust.score ? cTrust : lTrust;
+    const cOver = (participant.chessComRating ?? 0) > chessRules.maxRating || (participant.chessComPeakRating ?? 0) > chessRules.maxPeakRating;
+    const lOver = (participant.lichessRating ?? 0) > lichessRules.maxRating || (participant.lichessPeakRating ?? 0) > lichessRules.maxPeakRating;
+
+    if (cOver || lOver) {
+      // If either platform exceeds limit, lower score governs (sandbagging protection)
+      trustDetails = cTrust.score < lTrust.score ? cTrust : lTrust;
+    } else {
+      // Both platforms within limit -> prioritize account with lower RD (most reliable data)
+      trustDetails = cTrust.effectiveRd <= lTrust.effectiveRd ? cTrust : lTrust;
+    }
   }
   const trustScore = trustDetails?.score;
+  const minScoreThreshold = safeRules.minimumTrustScore ?? 65;
+
+  let isRescued = false;
+
+  // Rescue Eligibility Policy:
+  // 1. NO ToS or closed account violations (permanent rejection).
+  // 2. NO unverified or 404 handles (all provided handles must exist).
+  // 3. Activity failures (games/age below min) AND rating/peak ceiling exceedances CAN BE RESCUED if Trust Score >= threshold!
+  const hasUnverifiedHandleError = rejectionReasons.some((r) => r.includes('does not exist or could not be verified') || r.includes('No Chess.com or Lichess handle'));
+  const hasBanOrTos = Boolean(participant.lichessTosViolation || participant.chessComClosed);
+
+  const canBeRescued = !hasBanOrTos && !hasUnverifiedHandleError;
+
+  if (trustScore !== undefined) {
+    if (evaluationFailed && canBeRescued && trustScore >= minScoreThreshold) {
+      // RESCUE LOGIC: Candidate has valid verified handle(s) & no bans. Trust Score >= threshold rescues activity or ceiling failures!
+      evaluationFailed = false;
+      isRescued = true;
+      if (!rejectionReasons.some((r) => r.includes('Rescued by Trust Score'))) {
+        rejectionReasons.push(`🛡️ Rescued by Trust Score (${trustScore}/100 >= ${minScoreThreshold} threshold) despite rating/activity limits.`);
+      }
+    } else if (!evaluationFailed && trustScore < minScoreThreshold) {
+      // LOW TRUST REJECTION: Candidate passed raw ceilings, but statistical uncertainty/unreliability drops Trust Score below threshold.
+      evaluationFailed = true;
+      if (!rejectionReasons.some((r) => r.includes('Trust Score'))) {
+        rejectionReasons.push(`Trust Score (${trustScore}/100) is below minimum required threshold of ${minScoreThreshold}.`);
+      }
+    }
+  }
 
   const verdict = evaluationFailed ? 'REJECTED' : 'ELIGIBLE';
-  return { ...participant, rejectionReasons, verdict, trustScore, trustDetails };
+  return { ...participant, rejectionReasons, verdict, trustScore, trustDetails, isRescued };
 }
 
 /**
@@ -276,13 +328,15 @@ export async function verifyParticipantLive(
 
   if (participant.lichessUsername) {
     const stats = await fetchLichessUserStats(participant.lichessUsername, screeningFormat);
+    // Always apply ban flags — independent of whether full stats were retrieved
+    if (stats.tosViolation) updated.lichessTosViolation = true;
     if (stats.verified) {
       updated.lichessRating = stats.currentRating;
       updated.lichessPeakRating = stats.peakRating;
       updated.lichessPeakDate = stats.peakDate;
       updated.lichessGamesCount = stats.gamesCount;
       updated.lichessJoinedAt = stats.joinedAt;
-      updated.lichessTosViolation = stats.tosViolation;
+      updated.lichessTosViolation = stats.tosViolation ?? updated.lichessTosViolation;
       updated.lichessRd = stats.rd;
       updated.lichessProv = stats.prov;
       updated.lichessLastPlayedAt = stats.lastPlayedAt;
@@ -291,13 +345,15 @@ export async function verifyParticipantLive(
 
   if (participant.chessComUsername) {
     const stats = await fetchChessComUserStats(participant.chessComUsername, screeningFormat);
+    // Always apply ban flags — independent of whether full stats were retrieved
+    if (stats.isClosed) updated.chessComClosed = true;
     if (stats.verified) {
       updated.chessComRating = stats.currentRating;
       updated.chessComPeakRating = stats.peakRating;
       updated.chessComPeakDate = stats.peakDate;
       updated.chessComGamesCount = stats.gamesCount;
       updated.chessComJoinedAt = stats.joinedAt;
-      updated.chessComClosed = stats.isClosed;
+      updated.chessComClosed = stats.isClosed ?? updated.chessComClosed;
       updated.chessComRd = stats.rd;
       updated.chessComProv = stats.prov;
       updated.chessComLastPlayedAt = stats.lastPlayedAt;

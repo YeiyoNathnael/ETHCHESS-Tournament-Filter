@@ -14,11 +14,15 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  console.log(`[Verify-API] Querying ${platform} for user "${username}" (format: ${timeFormat})...`);
+
   if (platform === 'chessCom' || platform === 'chess_com' || platform === 'chess') {
     const stats = await fetchChessComUserStats(username, timeFormat);
+    console.log(`[Verify-API] Chess.com "${username}": verified=${stats.verified}, rating=${stats.currentRating}, peak=${stats.peakRating}, rd=${stats.rd}, closed=${stats.isClosed}`);
     return { success: true, stats };
   } else if (platform === 'lichess') {
     const stats = await fetchLichessUserStats(username, timeFormat);
+    console.log(`[Verify-API] Lichess "${username}": verified=${stats.verified}, rating=${stats.currentRating}, peak=${stats.peakRating}, rd=${stats.rd}, tosViolation=${stats.tosViolation}`);
     return { success: true, stats };
   }
 
