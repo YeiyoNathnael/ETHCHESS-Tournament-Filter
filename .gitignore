@@ -49,3 +49,4 @@ coverage/
 .vercel
 .netlify
 api-1.json
+local.db

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 
 export const tournaments = sqliteTable('tournaments', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -16,6 +16,7 @@ export const tournaments = sqliteTable('tournaments', {
   lichessMaxPeak: integer('lichess_max_peak').default(1500).notNull(),
   lichessMinAgeMonths: integer('lichess_min_age_months').default(3).notNull(),
   lichessMinGames: integer('lichess_min_games').default(30).notNull(),
+  minimumTrustScore: integer('minimum_trust_score').default(65).notNull(),
   createdAt: text('created_at').notNull(),
 });
 
@@ -25,18 +26,33 @@ export const participants = sqliteTable('participants', {
   telegramUsername: text('telegram_username'),
   rawChessComUser: text('raw_chess_com_user'),
   rawLichessUser: text('raw_lichess_user'),
+
+  // Chess.com fields
   chessComVerified: integer('chess_com_verified', { mode: 'boolean' }).default(false).notNull(),
   chessComCurrentRating: integer('chess_com_current_rating'),
   chessComPeakRating: integer('chess_com_peak_rating'),
+  chessComPeakDate: text('chess_com_peak_date'),
   chessComGamesCount: integer('chess_com_games_count'),
   chessComJoinedAt: text('chess_com_joined_at'),
-  chessComClosed: integer('chess_com_closed', { mode: 'boolean' }).default(false).notNull(),
+  chessComLastPlayedAt: text('chess_com_last_played_at'),
+  chessComRd: integer('chess_com_rd'),
+  chessComProv: integer('chess_com_prov', { mode: 'boolean' }),
+  // nullable: null = no API data; true/false = confirmed from API
+  chessComClosed: integer('chess_com_closed', { mode: 'boolean' }),
+
+  // Lichess fields
   lichessVerified: integer('lichess_verified', { mode: 'boolean' }).default(false).notNull(),
   lichessCurrentRating: integer('lichess_current_rating'),
   lichessPeakRating: integer('lichess_peak_rating'),
+  lichessPeakDate: text('lichess_peak_date'),
   lichessGamesCount: integer('lichess_games_count'),
   lichessJoinedAt: text('lichess_joined_at'),
-  lichessTosViolation: integer('lichess_tos_violation', { mode: 'boolean' }).default(false).notNull(),
+  lichessLastPlayedAt: text('lichess_last_played_at'),
+  lichessRd: integer('lichess_rd'),
+  lichessProv: integer('lichess_prov', { mode: 'boolean' }),
+  // nullable: null = no API data; true = confirmed ToS violation from API
+  lichessTosViolation: integer('lichess_tos_violation', { mode: 'boolean' }),
+
   systemVerdict: text('system_verdict').$type<'ELIGIBLE' | 'REJECTED'>().notNull(),
   rejectionReasons: text('rejection_reasons', { mode: 'json' }).$type<string[]>().notNull(),
   organizerStatus: text('organizer_status').$type<'APPROVED' | 'DISAPPROVED' | 'PENDING'>().default('PENDING').notNull(),

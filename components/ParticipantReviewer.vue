@@ -85,6 +85,9 @@
         <span class="summary-badge">Total: {{ counts.all }}</span>
         <span class="summary-badge eligible">Eligible: {{ counts.eligible }}</span>
         <span class="summary-badge approved">Approved: {{ counts.approved }}</span>
+        <span class="summary-badge trust-threshold-badge" title="Candidates with rating ceiling or activity limit exceedances whose statistical Trust Score is >= this threshold are rescued to ELIGIBLE">
+          <Gauge :size="12" /> Min Trust Threshold: ≥ {{ tourney?.rules?.minimumTrustScore ?? 65 }}/100
+        </span>
       </div>
 
       <div class="qol-buttons">
@@ -105,12 +108,32 @@
       <table class="data-table">
         <thead>
           <tr>
-            <th>#</th>
-            <th>Participant Telegram</th>
+            <th class="col-index">#</th>
+            <th class="sortable-th" @click="toggleSort('telegram')">
+              <div class="th-sort-inner">
+                <span>Participant Telegram</span>
+                <span class="sort-indicator">{{ sortColumn === 'telegram' ? (sortDirection === 'asc' ? '▲' : '▼') : '↕' }}</span>
+              </div>
+            </th>
             <th>Platform Handles</th>
-            <th>Trust Score</th>
-            <th>System Verdict</th>
-            <th>Status & Override</th>
+            <th class="sortable-th" @click="toggleSort('trust')">
+              <div class="th-sort-inner">
+                <span>Trust Score</span>
+                <span class="sort-indicator">{{ sortColumn === 'trust' ? (sortDirection === 'asc' ? '▲' : '▼') : '↕' }}</span>
+              </div>
+            </th>
+            <th class="sortable-th" @click="toggleSort('verdict')">
+              <div class="th-sort-inner">
+                <span>System Verdict</span>
+                <span class="sort-indicator">{{ sortColumn === 'verdict' ? (sortDirection === 'asc' ? '▲' : '▼') : '↕' }}</span>
+              </div>
+            </th>
+            <th class="sortable-th" @click="toggleSort('status')">
+              <div class="th-sort-inner">
+                <span>Status & Override</span>
+                <span class="sort-indicator">{{ sortColumn === 'status' ? (sortDirection === 'asc' ? '▲' : '▼') : '↕' }}</span>
+              </div>
+            </th>
             <th class="text-right">Actions</th>
           </tr>
         </thead>
@@ -154,11 +177,13 @@
                   target="_blank"
                   rel="noopener noreferrer"
                   class="compact-handle-pill chesscom"
-                  title="View Chess.com profile"
+                  :class="{ 'pill-banned': p.chessComClosed }"
+                  :title="p.chessComClosed ? 'Chess.com account closed/banned' : 'View Chess.com profile'"
                 >
                   <span class="brand-symbol">♟</span>
                   <span>{{ p.chessComUsername }}</span>
-                  <ExternalLink :size="11" class="ext-icon" />
+                  <span v-if="p.chessComClosed" class="banned-tag">🚫 CLOSED</span>
+                  <ExternalLink v-else :size="11" class="ext-icon" />
                 </a>
                 <span v-else class="no-handle-badge">C.com: —</span>
 
@@ -168,11 +193,13 @@
                   target="_blank"
                   rel="noopener noreferrer"
                   class="compact-handle-pill lichess"
-                  title="View Lichess profile"
+                  :class="{ 'pill-banned': p.lichessTosViolation }"
+                  :title="p.lichessTosViolation ? 'Lichess ToS Violation / Account Closed' : 'View Lichess profile'"
                 >
                   <span class="brand-symbol">♞</span>
                   <span>{{ p.lichessUsername }}</span>
-                  <ExternalLink :size="11" class="ext-icon" />
+                  <span v-if="p.lichessTosViolation" class="banned-tag">⚠️ TOS</span>
+                  <ExternalLink v-else :size="11" class="ext-icon" />
                 </a>
                 <span v-else class="no-handle-badge">Lichess: —</span>
               </div>
@@ -200,14 +227,19 @@
 
             <!-- System Verdict Badge -->
             <td class="col-verdict">
-              <span v-if="p.verdict === 'ELIGIBLE'" class="verdict-badge eligible">
-                <ShieldCheck :size="13" />
-                ELIGIBLE
-              </span>
-              <span v-else class="verdict-badge rejected">
-                <AlertTriangle :size="13" />
-                REJECTED
-              </span>
+              <div class="verdict-cell-wrap">
+                <span v-if="p.verdict === 'ELIGIBLE'" class="verdict-badge eligible">
+                  <ShieldCheck :size="13" />
+                  ELIGIBLE
+                </span>
+                <span v-else class="verdict-badge rejected">
+                  <AlertTriangle :size="13" />
+                  REJECTED
+                </span>
+                <span v-if="p.isRescued || p.rejectionReasons?.some(r => r.includes('Rescued'))" class="rescued-badge" title="Rescued by statistical Trust Score despite ceiling limits">
+                  🛡️ RESCUED
+                </span>
+              </div>
             </td>
 
             <!-- Status & Override Toggle -->
@@ -507,6 +539,23 @@ const searchQuery = ref('');
 const currentTab = ref<'all' | 'eligible' | 'rejected' | 'approved' | 'disapproved'>('all');
 const selectedParticipant = ref<Participant | null>(null);
 
+const sortColumn = ref<'telegram' | 'trust' | 'verdict' | 'status' | 'default'>('default');
+const sortDirection = ref<'asc' | 'desc'>('desc');
+
+function toggleSort(col: 'telegram' | 'trust' | 'verdict' | 'status') {
+  if (sortColumn.value === col) {
+    if (sortDirection.value === 'desc') {
+      sortDirection.value = 'asc';
+    } else {
+      sortColumn.value = 'default';
+      sortDirection.value = 'desc';
+    }
+  } else {
+    sortColumn.value = col;
+    sortDirection.value = 'desc';
+  }
+}
+
 function getTrustBadgeClass(score?: number) {
   if (score === undefined || score === null) return 'trust-na';
   if (score >= 90) return 'trust-excellent';
@@ -566,6 +615,28 @@ const filteredParticipants = computed(() => {
     );
   }
 
+  // Column Sorting
+  if (sortColumn.value !== 'default') {
+    const dir = sortDirection.value === 'asc' ? 1 : -1;
+    list = [...list].sort((a, b) => {
+      if (sortColumn.value === 'telegram') {
+        return a.telegramHandle.localeCompare(b.telegramHandle) * dir;
+      }
+      if (sortColumn.value === 'trust') {
+        const scoreA = a.trustScore ?? -1;
+        const scoreB = b.trustScore ?? -1;
+        return (scoreA - scoreB) * dir;
+      }
+      if (sortColumn.value === 'verdict') {
+        return a.verdict.localeCompare(b.verdict) * dir;
+      }
+      if (sortColumn.value === 'status') {
+        return a.status.localeCompare(b.status) * dir;
+      }
+      return 0;
+    });
+  }
+
   return list;
 });
 
@@ -622,7 +693,25 @@ async function handleCopyApprovedTelegramList() {
   }
 }
 
+function sanitizeTelegramHandle(raw?: string | null): string {
+  if (!raw) return '';
+  let s = raw.trim();
+  s = s.replace(/^https?:\/\/t\.me\//i, '');
+  s = s.replace(/^t\.me\//i, '');
+  s = s.replace(/^@/, '');
+  const match = s.match(/^[a-zA-Z0-9_]+/);
+  return match ? match[0] : s.trim();
+}
+
 async function handleAcceptAndConfirm(p: Participant) {
+  const cleanHandle = sanitizeTelegramHandle(p.telegramHandle);
+
+  // Synchronously launch Telegram window BEFORE async calls to prevent browser popup blocking!
+  let tgWindow: Window | null = null;
+  if (cleanHandle) {
+    tgWindow = window.open(`https://t.me/${cleanHandle}`, '_blank', 'noopener,noreferrer');
+  }
+
   // Update status to APPROVED
   await updateParticipantStatus(props.tournamentId, p.id, 'APPROVED');
 
@@ -633,9 +722,7 @@ async function handleAcceptAndConfirm(p: Participant) {
     origin: { y: 0.7 },
   });
 
-  // Clean handle for Telegram link
-  const rawHandle = p.telegramHandle.replace(/^@/, '').trim();
-  const confirmationMsg = `Hi @${rawHandle}! You are officially APPROVED for the ETHCHESS Tournament! See you in the arena!`;
+  const confirmationMsg = `Hi @${cleanHandle || 'player'}! You are officially APPROVED for the ETHCHESS Tournament! See you in the arena!`;
 
   // Copy to clipboard
   try {
@@ -643,7 +730,9 @@ async function handleAcceptAndConfirm(p: Participant) {
       await navigator.clipboard.writeText(confirmationMsg);
       addToast(
         'Confirmed & Message Copied!',
-        `Approval message copied to clipboard. Opening Telegram chat for @${rawHandle}...`,
+        cleanHandle
+          ? `Approval message copied. Opening Telegram chat for @${cleanHandle}...`
+          : `Approved candidate! Confirmation message copied to clipboard.`,
         'success'
       );
     }
@@ -651,9 +740,8 @@ async function handleAcceptAndConfirm(p: Participant) {
     console.warn('Clipboard copy error:', err);
   }
 
-  // Launch Telegram link in new tab
-  if (rawHandle) {
-    window.open(`https://t.me/${rawHandle}`, '_blank', 'noopener,noreferrer');
+  if (tgWindow) {
+    tgWindow.focus();
   }
 }
 
@@ -879,6 +967,22 @@ function formatTimestamp(isoStr?: string): string {
 
 .compact-handle-pill:hover {
   opacity: 0.85;
+}
+
+.compact-handle-pill.pill-banned {
+  background: #FEE2E2 !important;
+  color: #991B1B !important;
+  border: 1px solid #FCA5A5;
+}
+
+.banned-tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  background: #DC2626;
+  color: white;
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--radius-full);
+  margin-left: 0.2rem;
 }
 
 .compact-handle-pill.chesscom {

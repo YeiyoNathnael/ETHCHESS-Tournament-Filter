@@ -58,6 +58,7 @@ export async function ensureTablesExist() {
           lichess_max_peak INTEGER NOT NULL DEFAULT 1500,
           lichess_min_age_months INTEGER NOT NULL DEFAULT 3,
           lichess_min_games INTEGER NOT NULL DEFAULT 30,
+          minimum_trust_score INTEGER NOT NULL DEFAULT 65,
           created_at TEXT NOT NULL
         );
       `);
@@ -72,15 +73,23 @@ export async function ensureTablesExist() {
           chess_com_verified INTEGER NOT NULL DEFAULT 0,
           chess_com_current_rating INTEGER,
           chess_com_peak_rating INTEGER,
+          chess_com_peak_date TEXT,
           chess_com_games_count INTEGER,
           chess_com_joined_at TEXT,
-          chess_com_closed INTEGER NOT NULL DEFAULT 0,
+          chess_com_last_played_at TEXT,
+          chess_com_rd INTEGER,
+          chess_com_prov INTEGER,
+          chess_com_closed INTEGER,
           lichess_verified INTEGER NOT NULL DEFAULT 0,
           lichess_current_rating INTEGER,
           lichess_peak_rating INTEGER,
+          lichess_peak_date TEXT,
           lichess_games_count INTEGER,
           lichess_joined_at TEXT,
-          lichess_tos_violation INTEGER NOT NULL DEFAULT 0,
+          lichess_last_played_at TEXT,
+          lichess_rd INTEGER,
+          lichess_prov INTEGER,
+          lichess_tos_violation INTEGER,
           system_verdict TEXT NOT NULL,
           rejection_reasons TEXT NOT NULL,
           organizer_status TEXT NOT NULL DEFAULT 'PENDING',
@@ -90,18 +99,31 @@ export async function ensureTablesExist() {
         );
       `);
 
-      // Safe column migration checks for existing SQLite/Turso tables
+      // Safe column migration for existing tables (ALTER TABLE IF NOT EXISTS columns)
       const alters = [
-        "ALTER TABLE participants ADD COLUMN chess_com_joined_at TEXT;",
-        "ALTER TABLE participants ADD COLUMN chess_com_closed INTEGER NOT NULL DEFAULT 0;",
-        "ALTER TABLE participants ADD COLUMN lichess_joined_at TEXT;",
-        "ALTER TABLE participants ADD COLUMN lichess_tos_violation INTEGER NOT NULL DEFAULT 0;",
+        'ALTER TABLE participants ADD COLUMN chess_com_peak_date TEXT;',
+        'ALTER TABLE participants ADD COLUMN chess_com_last_played_at TEXT;',
+        'ALTER TABLE participants ADD COLUMN chess_com_rd INTEGER;',
+        'ALTER TABLE participants ADD COLUMN chess_com_prov INTEGER;',
+        'ALTER TABLE participants ADD COLUMN lichess_peak_date TEXT;',
+        'ALTER TABLE participants ADD COLUMN lichess_last_played_at TEXT;',
+        'ALTER TABLE participants ADD COLUMN lichess_rd INTEGER;',
+        'ALTER TABLE participants ADD COLUMN lichess_prov INTEGER;',
+        // Legacy columns that may have NOT NULL DEFAULT 0 — add if missing
+        'ALTER TABLE participants ADD COLUMN chess_com_joined_at TEXT;',
+        'ALTER TABLE participants ADD COLUMN lichess_joined_at TEXT;',
+        // Ban flag columns: nullable (no default) — can't ALTER existing NOT NULL DEFAULT 0,
+        // but adding as nullable is safe if column doesn't exist yet
+        'ALTER TABLE participants ADD COLUMN chess_com_closed INTEGER;',
+        'ALTER TABLE participants ADD COLUMN lichess_tos_violation INTEGER;',
+        'ALTER TABLE tournaments ADD COLUMN minimum_trust_score INTEGER NOT NULL DEFAULT 65;',
       ];
+
       for (const q of alters) {
         try {
           await client.execute(q);
         } catch {
-          // Column already exists, ignore
+          // Column already exists — ignore
         }
       }
     })().catch((err) => {
