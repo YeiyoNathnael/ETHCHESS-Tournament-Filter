@@ -375,7 +375,7 @@ export function evaluateParticipantRules(
     if (evaluationFailed && canBeRescued && trustScore >= minScoreThreshold) {
       // RESCUE LOGIC: Candidate has valid verified handle(s) & no bans. Trust Score >= threshold rescues activity or ceiling failures!
       evaluationFailed = false;
-      rejectionReasons.push(`🛡️ Rescued by Trust Score (${trustScore}/100 >= ${minScoreThreshold} threshold) despite rating/activity limits.`);
+      rejectionReasons.push(`Rescued by Trust Score (${trustScore}/100 >= ${minScoreThreshold} threshold) despite rating/activity limits.`);
     } else if (!evaluationFailed && trustScore < minScoreThreshold) {
       // LOW TRUST REJECTION: candidate passed raw ceilings, but unreliability drops score below threshold
       evaluationFailed = true;

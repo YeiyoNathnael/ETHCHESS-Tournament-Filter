@@ -3,7 +3,7 @@
     <div class="navbar-content">
       <NuxtLink to="/" class="brand-logo">
         <div class="logo-icon-wrap">
-          <Trophy class="logo-icon" :size="24" />
+          <img src="/ETHCHESS_logo.png" alt="ETHCHESS Logo" width="28" height="28" style="object-fit: contain;" />
         </div>
         <div class="brand-title-wrap">
           <span class="brand-name">ETHCHESS</span>

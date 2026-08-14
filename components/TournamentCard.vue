@@ -71,7 +71,7 @@
           <SlidersHorizontal :size="16" />
           <span>Manage & Filter</span>
         </NuxtLink>
-        <NuxtLink :to="`/tournaments/${tournament.id}`" class="btn btn-outline btn-flex">
+        <NuxtLink :to="`/t/${tournament.id}`" target="_blank" class="btn btn-outline btn-flex">
           <ExternalLink :size="16" />
           <span>Public Roster</span>
         </NuxtLink>

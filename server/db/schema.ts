@@ -59,7 +59,21 @@ export const participants = sqliteTable('participants', {
   submittedAt: text('submitted_at'),
 });
 
+export const participantClaims = sqliteTable('participant_claims', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  tournamentId: integer('tournament_id').notNull().references(() => tournaments.id, { onDelete: 'cascade' }),
+  claimType: text('claim_type').$type<'MISSING_LICHESS' | 'UNLISTED_REGISTERED'>().notNull(),
+  telegramUsername: text('telegram_username').notNull(),
+  chessComUser: text('chess_com_user'),
+  lichessUser: text('lichess_user'),
+  notes: text('notes'),
+  status: text('status').$type<'PENDING' | 'APPROVED' | 'REJECTED'>().default('PENDING').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
 export type Tournament = typeof tournaments.$inferSelect;
 export type NewTournament = typeof tournaments.$inferInsert;
 export type Participant = typeof participants.$inferSelect;
 export type NewParticipant = typeof participants.$inferInsert;
+export type ParticipantClaim = typeof participantClaims.$inferSelect;
+export type NewParticipantClaim = typeof participantClaims.$inferInsert;

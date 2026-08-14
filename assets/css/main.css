@@ -508,3 +508,29 @@ a:hover {
   background: var(--color-terracotta, #D96B43);
   color: #ffffff;
 }
+
+/* Missing Lichess Accent Pill */
+.platform-pill.lichess-missing {
+  background: rgba(217, 107, 67, 0.15) !important;
+  color: var(--color-terracotta, #D96B43) !important;
+  border: 1px dashed var(--color-terracotta, #D96B43) !important;
+  font-weight: 700 !important;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.platform-pill.lichess-missing:hover {
+  background: var(--color-terracotta, #D96B43) !important;
+  color: #ffffff !important;
+}
+
+.lichess-missing-badge {
+  background: rgba(217, 107, 67, 0.15) !important;
+  color: var(--color-terracotta, #D96B43) !important;
+  border: 1px dashed var(--color-terracotta, #D96B43) !important;
+  font-weight: 700 !important;
+  padding: 3px 8px !important;
+  border-radius: 6px !important;
+}

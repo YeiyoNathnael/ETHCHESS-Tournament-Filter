@@ -174,7 +174,7 @@
                   :class="{ active: ruleTab === 'chessCom' }"
                   @click="ruleTab = 'chessCom'"
                 >
-                  <span>♟ Chess.com</span>
+                  <span>Chess.com</span>
                 </button>
                 <button
                   type="button"
@@ -182,7 +182,7 @@
                   :class="{ active: ruleTab === 'lichess' }"
                   @click="ruleTab = 'lichess'"
                 >
-                  <span>♞ Lichess</span>
+                  <span>Lichess</span>
                 </button>
               </div>
             </div>
