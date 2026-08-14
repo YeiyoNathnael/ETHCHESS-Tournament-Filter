@@ -23,35 +23,41 @@
       <div v-else class="container py-6">
         <!-- Hero Header Card -->
         <div class="public-hero-card">
-          <div class="hero-cover" :style="{ backgroundImage: `url(${tournament.imageUrl || 'https://images.unsplash.com/photo-1529699211952-734e80c4d42b?auto=format&fit=crop&q=80&w=1200'})` }">
-            <div class="hero-overlay"></div>
-            <div class="hero-badge-wrap">
-              <span class="time-format-chip" :class="tournament.timeControl.toLowerCase()">
-                {{ tournament.timeControl }}
-              </span>
-              <span class="roster-count-chip">
-                <Users :size="14" />
-                {{ approvedParticipants.length }} Confirmed Competitors
-              </span>
+          <div class="hero-card-grid">
+            <div class="hero-image-box">
+              <img
+                :src="tournament.coverImage || tournament.imageUrl || 'https://images.unsplash.com/photo-1529699211952-734e80c4d42b?auto=format&fit=crop&q=80&w=1200'"
+                :alt="tournament.title"
+                class="hero-img"
+              />
+              <div class="hero-badge-wrap">
+                <span class="time-format-chip" :class="tournament.timeControl.toLowerCase()">
+                  {{ tournament.timeControl }}
+                </span>
+                <span class="roster-count-chip">
+                  <Users :size="13" />
+                  {{ approvedParticipants.length }} Confirmed
+                </span>
+              </div>
             </div>
-          </div>
 
-          <div class="hero-content">
-            <h1 class="event-title">{{ tournament.title }}</h1>
-            <p v-if="tournament.description" class="event-desc">{{ tournament.description }}</p>
+            <div class="hero-content">
+              <h1 class="event-title">{{ tournament.title }}</h1>
+              <p v-if="tournament.description" class="event-desc">{{ tournament.description }}</p>
 
-            <div class="event-meta-grid">
-              <div class="meta-item">
-                <Calendar :size="16" class="icon-jade" />
-                <span>{{ formatDate(tournament.date) }}</span>
-              </div>
-              <div class="meta-item">
-                <MapPin :size="16" class="icon-jade" />
-                <span>{{ tournament.location || 'Online' }}</span>
-              </div>
-              <div class="meta-item">
-                <ShieldCheck :size="16" class="icon-jade" />
-                <span>Fair Play Verified Roster</span>
+              <div class="event-meta-grid">
+                <div class="meta-item">
+                  <Calendar :size="16" class="icon-jade" />
+                  <span>{{ formatDate(tournament.date) }}</span>
+                </div>
+                <div class="meta-item">
+                  <MapPin :size="16" class="icon-jade" />
+                  <span>{{ tournament.location || 'Online' }}</span>
+                </div>
+                <div class="meta-item">
+                  <ShieldCheck :size="16" class="icon-jade" />
+                  <span>Fair Play Verified Roster</span>
+                </div>
               </div>
             </div>
           </div>
@@ -644,30 +650,58 @@ onMounted(async () => {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
   border: 1px solid rgba(15, 82, 87, 0.12);
   margin-bottom: 1.5rem;
+  padding: 1.25rem;
 }
 
-.hero-cover {
-  height: 180px;
-  background-size: cover;
-  background-position: center;
+.hero-card-grid {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.hero-image-box {
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  padding: 1.2rem;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--color-cream-surface, #FAF7F2);
+  border: 1px solid rgba(15, 82, 87, 0.1);
 }
 
-.hero-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, rgba(15, 82, 87, 0.9) 0%, rgba(15, 82, 87, 0.2) 100%);
+.hero-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .hero-badge-wrap {
-  position: relative;
+  position: absolute;
+  bottom: 0.6rem;
+  left: 0.6rem;
+  right: 0.6rem;
   z-index: 2;
   display: flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
   flex-wrap: wrap;
+}
+
+@media (max-width: 680px) {
+  .public-hero-card {
+    padding: 1rem;
+  }
+
+  .hero-card-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .hero-image-box {
+    max-height: 300px;
+    aspect-ratio: 1 / 1;
+  }
 }
 
 .time-format-chip {
