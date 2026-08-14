@@ -18,17 +18,33 @@
           <span>Organizer Dashboard</span>
         </NuxtLink>
 
-        <NuxtLink to="/tournaments/ethchess-u1500-2026" class="nav-btn" active-class="active">
+        <NuxtLink to="/t/6" class="nav-btn" active-class="active">
           <Globe :size="18" />
           <span>Public Roster View</span>
         </NuxtLink>
+
+        <button class="nav-btn logout-btn" title="Logout Organizer Session" @click="handleLogout">
+          <LogOut :size="18" />
+          <span>Logout</span>
+        </button>
       </nav>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-import { Trophy, LayoutDashboard, Globe } from 'lucide-vue-next';
+import { Trophy, LayoutDashboard, Globe, LogOut } from 'lucide-vue-next';
+import { useRouter } from 'vue-router';
+import { useCookie } from '#app';
+
+const router = useRouter();
+
+async function handleLogout() {
+  await $fetch('/api/auth/logout', { method: 'POST' });
+  const cookie = useCookie('organizer_session');
+  cookie.value = null;
+  router.push('/login');
+}
 </script>
 
 <style scoped>

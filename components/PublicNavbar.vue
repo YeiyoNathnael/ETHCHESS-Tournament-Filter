@@ -191,12 +191,62 @@ defineEmits<{
 }
 
 @media (max-width: 640px) {
+  .public-navbar {
+    padding: 0.6rem 0.75rem;
+  }
+
+  .nav-container {
+    gap: 0.5rem;
+  }
+
+  .brand-link {
+    gap: 0.4rem;
+  }
+
+  .brand-name {
+    font-size: 0.95rem;
+  }
+
+  .league-badge {
+    font-size: 0.55rem;
+    padding: 1px 4px;
+  }
+
   .brand-sub {
     display: none;
   }
+
   .nav-links {
-    gap: 0.75rem;
+    gap: 0.6rem;
   }
+
+  .nav-tab {
+    font-size: 0.72rem;
+    padding: 2px 0;
+  }
+}
+
+@media (max-width: 360px) {
+  .public-navbar {
+    padding: 0.5rem 0.4rem;
+  }
+
+  .brand-name {
+    font-size: 0.85rem;
+  }
+
+  .league-badge {
+    display: none;
+  }
+
+  .nav-links {
+    gap: 0.35rem;
+  }
+
+  .nav-tab {
+    font-size: 0.65rem;
+  }
+
   .nav-tab span {
     display: none;
   }
