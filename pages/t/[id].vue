@@ -43,7 +43,11 @@
 
             <div class="hero-content">
               <h1 class="event-title">{{ tournament.title }}</h1>
-              <p v-if="tournament.description" class="event-desc">{{ tournament.description }}</p>
+              <div
+                v-if="tournament.description"
+                class="event-desc markdown-body"
+                v-html="renderedDescription"
+              ></div>
 
               <div class="event-meta-grid">
                 <div class="meta-item">
@@ -439,6 +443,7 @@ import {
 } from 'lucide-vue-next';
 import IconChessCom from '~/components/icons/IconChessCom.vue';
 import IconLichess from '~/components/icons/IconLichess.vue';
+import { marked } from 'marked';
 
 definePageMeta({
   layout: 'public',
@@ -455,6 +460,15 @@ const error = ref(false);
 const searchQuery = ref('');
 
 const tournament = computed(() => getTournament(tournamentId.value));
+
+const renderedDescription = computed(() => {
+  if (!tournament.value?.description) return '';
+  try {
+    return marked.parse(tournament.value.description, { breaks: true, gfm: true });
+  } catch {
+    return tournament.value.description;
+  }
+});
 const participants = computed(() => getParticipants(tournamentId.value));
 
 /**
