@@ -1,4 +1,4 @@
-import { defineEventHandler, readBody, readMultipartFormData, createError } from 'h3';
+import { defineEventHandler, readBody, readMultipartFormData, createError, getCookie } from 'h3';
 import { db, ensureTablesExist } from '~/server/db';
 import { tournaments, participants } from '~/server/db/schema';
 import { eq } from 'drizzle-orm';
@@ -8,6 +8,14 @@ import { evaluateParticipantRules, type TournamentRuleLimits } from '~/utils/rul
 
 export default defineEventHandler(async (event) => {
   await ensureTablesExist();
+
+  const session = getCookie(event, 'organizer_session');
+  if (session !== 'true') {
+    throw createError({
+      statusCode: 401,
+      statusMessage: 'Unauthorized: Organizer session required',
+    });
+  }
 
   if (event.node.req.method !== 'POST') {
     throw createError({

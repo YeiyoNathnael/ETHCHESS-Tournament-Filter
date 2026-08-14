@@ -43,7 +43,7 @@
             <div class="event-meta-grid">
               <div class="meta-item">
                 <Calendar :size="16" class="icon-jade" />
-                <span>{{ tournament.date || 'TBD' }}</span>
+                <span>{{ formatDate(tournament.date) }}</span>
               </div>
               <div class="meta-item">
                 <MapPin :size="16" class="icon-jade" />
@@ -189,7 +189,7 @@
                   <td class="col-platforms">
                     <div class="handles-cell">
                       <a
-                        v-if="p.chessComUsername"
+                        v-if="isRealHandle(p.chessComUsername)"
                         :href="`https://www.chess.com/member/${p.chessComUsername}`"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -200,7 +200,7 @@
                         <ExternalLink :size="10" />
                       </a>
                       <a
-                        v-if="p.lichessUsername"
+                        v-if="isRealHandle(p.lichessUsername)"
                         :href="`https://lichess.org/@/${p.lichessUsername}`"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -223,11 +223,11 @@
                   </td>
                   <td class="col-ratings">
                     <div class="ratings-cell">
-                      <span v-if="p.chessComStats?.currentRating" class="rating-chip chesscom">
+                      <span v-if="isRealHandle(p.chessComUsername) && p.chessComStats?.currentRating" class="rating-chip chesscom">
                         <IconChessCom :size="12" />
                         <span>{{ p.chessComStats.currentRating }} ELO</span>
                       </span>
-                      <span v-if="p.lichessStats?.currentRating" class="rating-chip lichess">
+                      <span v-if="isRealHandle(p.lichessUsername) && p.lichessStats?.currentRating" class="rating-chip lichess">
                         <IconLichess :size="12" />
                         <span>{{ p.lichessStats.currentRating }} ELO</span>
                       </span>
@@ -259,7 +259,7 @@
               <div class="mp-card-bottom">
                 <div class="handles-cell">
                   <a
-                    v-if="p.chessComUsername"
+                    v-if="isRealHandle(p.chessComUsername)"
                     :href="`https://www.chess.com/member/${p.chessComUsername}`"
                     target="_blank"
                     rel="noopener noreferrer"
@@ -271,7 +271,7 @@
                     <ExternalLink :size="10" />
                   </a>
                   <a
-                    v-if="p.lichessUsername"
+                    v-if="isRealHandle(p.lichessUsername)"
                     :href="`https://lichess.org/@/${p.lichessUsername}`"
                     target="_blank"
                     rel="noopener noreferrer"
@@ -451,6 +451,57 @@ const searchQuery = ref('');
 const tournament = computed(() => getTournament(tournamentId.value));
 const participants = computed(() => getParticipants(tournamentId.value));
 
+/**
+ * Checks if a platform handle string is a genuine username or a placeholder/fake input.
+ */
+function isRealHandle(handle?: string | null): boolean {
+  if (!handle || typeof handle !== 'string') return false;
+  const cleaned = handle.trim().toLowerCase().replace(/^["']|["']$/g, '');
+  if (!cleaned) return false;
+
+  const fakeValues = new Set([
+    'n/a', 'na', 'none', 'no', 'null', 'undefined', '-', '--', '---', 'nil', 'nan',
+    'no account', 'no lichess', 'no chess.com', 'not applicable',
+    "i don't have", 'i dont have', "don't have", 'dont have',
+    "i don't have lichess", 'i dont have lichess', "i don't have chess.com", 'i dont have chess.com',
+    "i don't have one", 'i dont have one', 'dont have one', "don't have one",
+    '0', 'nothing', 'not registered', 'not playing', 'idk', 'anonymous', 'i have no account'
+  ]);
+
+  if (fakeValues.has(cleaned)) return false;
+
+  if (
+    /^(i\s+)?don'?t\s+have/i.test(cleaned) ||
+    /^no\s+(lichess|account|profile|username|chess\.com)/i.test(cleaned) ||
+    /does\s+not\s+have/i.test(cleaned)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Formats ISO date string into a user-friendly format (e.g., "Aug 30, 2026 at 3:00 PM")
+ */
+function formatDate(dateString?: string | null): string {
+  if (!dateString) return 'TBD';
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(date);
+  } catch {
+    return dateString;
+  }
+}
+
 const approvedParticipants = computed(() => {
   return participants.value.filter((p) => p.status === 'APPROVED');
 });
@@ -461,8 +512,8 @@ const filteredApproved = computed(() => {
   return approvedParticipants.value.filter((p) => {
     return (
       p.telegramHandle.toLowerCase().includes(q) ||
-      (p.chessComUsername && p.chessComUsername.toLowerCase().includes(q)) ||
-      (p.lichessUsername && p.lichessUsername.toLowerCase().includes(q))
+      (isRealHandle(p.chessComUsername) && p.chessComUsername.toLowerCase().includes(q)) ||
+      (isRealHandle(p.lichessUsername) && p.lichessUsername.toLowerCase().includes(q))
     );
   });
 });
@@ -753,19 +804,30 @@ onMounted(async () => {
 }
 
 .pr-metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.pr-metric {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  width: 100%;
 }
 
 .pr-metric .lbl {
-  font-size: 0.72rem;
-  color: #777;
+  font-size: 0.75rem;
+  color: #666;
+  white-space: nowrap;
 }
 
 .pr-metric .val {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 700;
+  white-space: nowrap;
+  color: var(--color-jade-deep, #0F5257);
 }
 
 /* Roster Section */
@@ -1064,5 +1126,63 @@ onMounted(async () => {
 
 .ml-auto {
   margin-left: auto;
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+
+.modal-body, .choice-body, .form-body {
+  overflow-y: auto;
+}
+
+@media (max-width: 480px) {
+  .modal-backdrop {
+    padding: 0.75rem;
+  }
+
+  .modal-header {
+    padding: 0.85rem 1rem;
+  }
+
+  .modal-title {
+    font-size: 0.95rem;
+  }
+
+  .modal-subtitle {
+    font-size: 0.74rem;
+  }
+
+  .choice-body, .form-body {
+    padding: 1rem;
+    gap: 0.75rem;
+  }
+
+  .choice-option-card {
+    padding: 0.85rem 0.95rem;
+    gap: 0.75rem;
+  }
+
+  .choice-text h4 {
+    font-size: 0.88rem;
+    margin-bottom: 2px;
+  }
+
+  .choice-text p {
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+
+  .modal-footer {
+    padding: 0.85rem 1rem;
+  }
 }
 </style>

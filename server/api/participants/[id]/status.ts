@@ -1,10 +1,18 @@
-import { defineEventHandler, readBody, createError } from 'h3';
+import { defineEventHandler, readBody, createError, getCookie } from 'h3';
 import { db, ensureTablesExist } from '~/server/db';
 import { participants } from '~/server/db/schema';
 import { eq } from 'drizzle-orm';
 
 export default defineEventHandler(async (event) => {
   await ensureTablesExist();
+
+  const session = getCookie(event, 'organizer_session');
+  if (session !== 'true') {
+    throw createError({
+      statusCode: 401,
+      statusMessage: 'Unauthorized: Organizer session required',
+    });
+  }
 
   const method = event.node.req.method;
   if (method !== 'PATCH' && method !== 'PUT') {
