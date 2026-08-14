@@ -189,7 +189,7 @@
                   <td class="col-platforms">
                     <div class="handles-cell">
                       <a
-                        v-if="isRealHandle(p.chessComUsername)"
+                        v-if="isVerifiedChessComUser(p)"
                         :href="`https://www.chess.com/member/${p.chessComUsername}`"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -200,7 +200,7 @@
                         <ExternalLink :size="10" />
                       </a>
                       <a
-                        v-if="isRealHandle(p.lichessUsername)"
+                        v-if="isVerifiedLichessUser(p)"
                         :href="`https://lichess.org/@/${p.lichessUsername}`"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -223,11 +223,11 @@
                   </td>
                   <td class="col-ratings">
                     <div class="ratings-cell">
-                      <span v-if="isRealHandle(p.chessComUsername) && p.chessComStats?.currentRating" class="rating-chip chesscom">
+                      <span v-if="isVerifiedChessComUser(p) && p.chessComStats?.currentRating" class="rating-chip chesscom">
                         <IconChessCom :size="12" />
                         <span>{{ p.chessComStats.currentRating }} ELO</span>
                       </span>
-                      <span v-if="isRealHandle(p.lichessUsername) && p.lichessStats?.currentRating" class="rating-chip lichess">
+                      <span v-if="isVerifiedLichessUser(p) && p.lichessStats?.currentRating" class="rating-chip lichess">
                         <IconLichess :size="12" />
                         <span>{{ p.lichessStats.currentRating }} ELO</span>
                       </span>
@@ -259,7 +259,7 @@
               <div class="mp-card-bottom">
                 <div class="handles-cell">
                   <a
-                    v-if="isRealHandle(p.chessComUsername)"
+                    v-if="isVerifiedChessComUser(p)"
                     :href="`https://www.chess.com/member/${p.chessComUsername}`"
                     target="_blank"
                     rel="noopener noreferrer"
@@ -271,7 +271,7 @@
                     <ExternalLink :size="10" />
                   </a>
                   <a
-                    v-if="isRealHandle(p.lichessUsername)"
+                    v-if="isVerifiedLichessUser(p)"
                     :href="`https://lichess.org/@/${p.lichessUsername}`"
                     target="_blank"
                     rel="noopener noreferrer"
@@ -502,6 +502,45 @@ function formatDate(dateString?: string | null): string {
   }
 }
 
+/**
+ * Determines if a participant has a valid, verified Lichess user account on public view.
+ */
+function isVerifiedLichessUser(p: any): boolean {
+  if (!p || !p.lichessUsername) return false;
+
+  const raw = String(p.lichessUsername).trim();
+
+  // 1. Text sanity check (filters "don't have", "n/a", "none", "no account")
+  if (!isRealHandle(raw)) return false;
+
+  // 2. Format check: Lichess usernames cannot be pure digits (e.g., "400") or < 2 characters
+  if (/^\d+$/.test(raw) || raw.length < 2) return false;
+
+  // 3. Database verification check: if API returned 404/unverified and no rating exists
+  if (p.lichessVerified === false && (!p.lichessStats || p.lichessStats.currentRating === null)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Determines if a participant has a valid, verified Chess.com user account on public view.
+ */
+function isVerifiedChessComUser(p: any): boolean {
+  if (!p || !p.chessComUsername) return false;
+
+  const raw = String(p.chessComUsername).trim();
+
+  if (!isRealHandle(raw)) return false;
+  if (/^\d+$/.test(raw) || raw.length < 2) return false;
+  if (p.chessComVerified === false && (!p.chessComStats || p.chessComStats.currentRating === null)) {
+    return false;
+  }
+
+  return true;
+}
+
 const approvedParticipants = computed(() => {
   return participants.value.filter((p) => p.status === 'APPROVED');
 });
@@ -512,8 +551,8 @@ const filteredApproved = computed(() => {
   return approvedParticipants.value.filter((p) => {
     return (
       p.telegramHandle.toLowerCase().includes(q) ||
-      (isRealHandle(p.chessComUsername) && p.chessComUsername.toLowerCase().includes(q)) ||
-      (isRealHandle(p.lichessUsername) && p.lichessUsername.toLowerCase().includes(q))
+      (isVerifiedChessComUser(p) && p.chessComUsername.toLowerCase().includes(q)) ||
+      (isVerifiedLichessUser(p) && p.lichessUsername.toLowerCase().includes(q))
     );
   });
 });
