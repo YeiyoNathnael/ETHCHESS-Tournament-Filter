@@ -534,3 +534,77 @@ a:hover {
   padding: 3px 8px !important;
   border-radius: 6px !important;
 }
+
+/* Rich Markdown Typography for Public Descriptions */
+.markdown-body {
+  font-family: 'Space Grotesk', sans-serif;
+  color: #444;
+  line-height: 1.6;
+  font-size: 0.9rem;
+}
+
+.markdown-body p {
+  margin-bottom: 0.6rem;
+}
+
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  font-weight: 700;
+  color: var(--color-jade-deep, #0F5257);
+  margin-top: 0.8rem;
+  margin-bottom: 0.4rem;
+  line-height: 1.3;
+}
+
+.markdown-body h1 { font-size: 1.3rem; }
+.markdown-body h2 { font-size: 1.15rem; }
+.markdown-body h3 { font-size: 1.05rem; }
+.markdown-body h4 { font-size: 0.95rem; }
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.25rem;
+  margin-top: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.markdown-body ul li {
+  list-style-type: disc;
+  margin-bottom: 0.25rem;
+}
+
+.markdown-body ol li {
+  list-style-type: decimal;
+  margin-bottom: 0.25rem;
+}
+
+.markdown-body a {
+  color: var(--color-jade-primary, #00A86B);
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.markdown-body a:hover {
+  color: var(--color-jade-deep, #0F5257);
+}
+
+.markdown-body strong,
+.markdown-body b {
+  font-weight: 700;
+  color: var(--color-jade-deep, #0F5257);
+}
+
+.markdown-body code {
+  background: var(--color-cream-surface, #FAF7F2);
+  border: 1px solid rgba(15, 82, 87, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-family: monospace;
+}
