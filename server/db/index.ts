@@ -99,6 +99,20 @@ export async function ensureTablesExist() {
         );
       `);
 
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS participant_claims (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+          claim_type TEXT NOT NULL,
+          telegram_username TEXT NOT NULL,
+          chess_com_user TEXT,
+          lichess_user TEXT,
+          notes TEXT,
+          status TEXT NOT NULL DEFAULT 'PENDING',
+          created_at TEXT NOT NULL
+        );
+      `);
+
       // Safe column migration for existing tables (ALTER TABLE IF NOT EXISTS columns)
       const alters = [
         'ALTER TABLE participants ADD COLUMN chess_com_peak_date TEXT;',

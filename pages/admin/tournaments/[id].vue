@@ -11,9 +11,13 @@
           <Trash2 :size="14" />
           <span>Delete Event</span>
         </button>
-        <NuxtLink :to="`/tournaments/${tournament.id}`" class="btn btn-outline btn-sm">
+        <button class="btn btn-primary btn-sm btn-copy-public" title="Copy public share link for players" @click="handleCopyPublicShareLink">
+          <Share2 :size="14" />
+          <span>Copy Public Link</span>
+        </button>
+        <NuxtLink :to="`/t/${tournament.id}`" target="_blank" class="btn btn-outline btn-sm">
           <ExternalLink :size="14" />
-          <span>View Public Roster Page</span>
+          <span>Preview Public Page</span>
         </NuxtLink>
         <button class="btn btn-primary btn-sm" @click="isDrawerOpen = true">
           <SlidersHorizontal :size="14" />
@@ -129,14 +133,14 @@
               :class="{ active: drawerTab === 'chessCom' }"
               @click="drawerTab = 'chessCom'"
             >
-              <span>♟ Chess.com Rules</span>
+              <span>Chess.com Rules</span>
             </button>
             <button
               class="drawer-tab-btn"
               :class="{ active: drawerTab === 'lichess' }"
               @click="drawerTab = 'lichess'"
             >
-              <span>♞ Lichess Rules</span>
+              <span>Lichess Rules</span>
             </button>
           </div>
 
@@ -366,7 +370,8 @@ import {
   Trash2,
   AlertTriangle,
   FileCheck,
-  UploadCloud
+  UploadCloud,
+  Share2,
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -457,6 +462,18 @@ function confirmDeleteTournament() {
   addToast('Tournament Deleted', `Successfully deleted "${title}".`, 'info');
   isDeleteModalOpen.value = false;
   router.push('/');
+}
+
+function handleCopyPublicShareLink() {
+  if (typeof window === 'undefined' || !tournament.value) return;
+  const publicUrl = `${window.location.origin}/t/${tournament.value.id}`;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(publicUrl).then(() => {
+      addToast('Public Link Copied!', `Share link for players: ${publicUrl}`, 'success');
+    }).catch(() => {
+      addToast('Public Link', publicUrl, 'info');
+    });
+  }
 }
 
 function handleApplyRules() {

@@ -77,6 +77,16 @@
         <span>Disapproved</span>
         <span class="tab-count disapproved">{{ counts.disapproved }}</span>
       </button>
+
+      <button
+        class="tab-btn"
+        :class="{ active: currentTab === 'claims' }"
+        @click="currentTab = 'claims'"
+      >
+        <HelpCircle :size="14" />
+        <span>Appeals & Claims</span>
+        <span class="tab-count claims">{{ claimsList.length }}</span>
+      </button>
     </div>
 
     <!-- Quality of Life Quick Action Bar -->
@@ -113,8 +123,71 @@
       </div>
     </div>
 
+    <!-- Claims & Appeals Table -->
+    <div v-if="currentTab === 'claims'" class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th class="col-index">#</th>
+            <th>Type</th>
+            <th>Telegram</th>
+            <th>Submitted Handles</th>
+            <th>Notes</th>
+            <th>Status</th>
+            <th class="col-actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="claimsList.length === 0">
+            <td colspan="7" class="empty-table-cell">
+              <div class="empty-state">
+                <HelpCircle :size="32" />
+                <p>No player claims or appeals submitted yet.</p>
+              </div>
+            </td>
+          </tr>
+          <tr v-for="(c, idx) in claimsList" :key="c.id">
+            <td class="col-index">{{ idx + 1 }}</td>
+            <td>
+              <span class="claim-type-chip" :class="c.claimType.toLowerCase()">
+                {{ c.claimType === 'MISSING_LICHESS' ? 'Missing Lichess' : 'Unlisted Registration' }}
+              </span>
+            </td>
+            <td><strong>{{ c.telegramUsername }}</strong></td>
+            <td>
+              <div class="handles-cell">
+                <span v-if="c.chessComUser" class="platform-pill chesscom">
+                  <IconChessCom :size="12" /> {{ c.chessComUser }}
+                </span>
+                <span v-if="c.lichessUser" class="platform-pill lichess">
+                  <IconLichess :size="12" /> {{ c.lichessUser }}
+                </span>
+              </div>
+            </td>
+            <td><span class="claim-notes">{{ c.notes || 'No notes provided' }}</span></td>
+            <td>
+              <span class="status-pill-badge" :class="c.status.toLowerCase()">{{ c.status }}</span>
+            </td>
+            <td class="col-actions">
+              <div v-if="c.status === 'PENDING'" class="action-buttons">
+                <button class="btn btn-sm btn-telegram" title="Approve & Add to Official Roster" @click="handleUpdateClaimStatus(c.id, 'APPROVED')">
+                  <CheckCircle2 :size="14" />
+                  <span>Approve & Add</span>
+                </button>
+                <button class="btn btn-sm btn-outline btn-delete" title="Reject Claim" @click="handleUpdateClaimStatus(c.id, 'REJECTED')">
+                  <XCircle :size="14" />
+                  <span>Reject</span>
+                </button>
+              </div>
+              <span v-else class="text-sm text-gray-500">Processed</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     <!-- Data Table -->
-    <div class="table-responsive">
+    <div v-else class="table-responsive">
       <table class="data-table">
         <thead>
           <tr>
@@ -191,9 +264,9 @@
                   :class="{ 'pill-banned': p.chessComClosed }"
                   :title="p.chessComClosed ? 'Chess.com account closed/banned' : 'View Chess.com profile'"
                 >
-                  <span class="brand-symbol">♟</span>
+                  <IconChessCom :size="12" />
                   <span>{{ p.chessComUsername }}</span>
-                  <span v-if="p.chessComClosed" class="banned-tag">🚫 CLOSED</span>
+                  <span v-if="p.chessComClosed" class="banned-tag">CLOSED</span>
                   <ExternalLink v-else :size="11" class="ext-icon" />
                 </a>
                 <span v-else class="no-handle-badge">C.com: —</span>
@@ -207,11 +280,14 @@
                   :class="{ 'pill-banned': p.lichessTosViolation }"
                   :title="p.lichessTosViolation ? 'Lichess ToS Violation / Account Closed' : 'View Lichess profile'"
                 >
-                  <span class="brand-symbol">♞</span>
+                  <IconLichess :size="12" />
                   <span>{{ p.lichessUsername }}</span>
-                  <span v-if="p.lichessTosViolation" class="banned-tag">⚠️ TOS</span>
+                  <span v-if="p.lichessTosViolation" class="banned-tag">TOS</span>
                   <ExternalLink v-else :size="11" class="ext-icon" />
                 </a>
+                <span v-else-if="p.status === 'APPROVED'" class="no-handle-badge lichess-missing-badge" title="Candidate approved without Lichess handle">
+                  <IconLichess :size="12" /> Lichess Missing
+                </span>
                 <span v-else class="no-handle-badge">Lichess: —</span>
               </div>
             </td>
@@ -248,7 +324,7 @@
                   REJECTED
                 </span>
                 <span v-if="p.isRescued || p.rejectionReasons?.some(r => r.includes('Rescued'))" class="rescued-badge" title="Rescued by statistical Trust Score despite ceiling limits">
-                  🛡️ RESCUED
+                  RESCUED
                 </span>
               </div>
             </td>
@@ -411,7 +487,7 @@
               <!-- Chess.com Card -->
               <div class="platform-card chesscom">
                 <div class="card-header-bar">
-                  <span class="brand-title">♟ Chess.com</span>
+                  <span class="brand-title">Chess.com</span>
                   <a
                     v-if="selectedParticipant.chessComUsername"
                     :href="`https://www.chess.com/member/${selectedParticipant.chessComUsername}`"
@@ -445,7 +521,7 @@
               <!-- Lichess Card -->
               <div class="platform-card lichess">
                 <div class="card-header-bar">
-                  <span class="brand-title">♞ Lichess</span>
+                  <span class="brand-title">Lichess</span>
                   <a
                     v-if="selectedParticipant.lichessUsername"
                     :href="`https://lichess.org/@/${selectedParticipant.lichessUsername}`"
@@ -526,7 +602,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import type { Participant } from '~/types/tournament';
 import { useTournaments } from '~/composables/useTournaments';
 import { useToast } from '~/composables/useToast';
@@ -547,21 +623,77 @@ import {
   Copy,
   Gauge,
   Trash2,
+  HelpCircle,
 } from 'lucide-vue-next';
 import confetti from 'canvas-confetti';
+import IconChessCom from '~/components/icons/IconChessCom.vue';
+import IconLichess from '~/components/icons/IconLichess.vue';
 
 const props = defineProps<{
   tournamentId: string;
 }>();
 
-const { getTournament, getParticipants, toggleManualOverride, updateParticipantStatus, deleteParticipant, purgeRejectedParticipants } = useTournaments();
+const { getTournament, getParticipants, toggleManualOverride, updateParticipantStatus, deleteParticipant, purgeRejectedParticipants, fetchTournamentDetails } = useTournaments();
 const { addToast } = useToast();
 
 const currentTournament = computed(() => getTournament(props.tournamentId));
 
 const searchQuery = ref('');
-const currentTab = ref<'all' | 'eligible' | 'rejected' | 'approved' | 'disapproved'>('all');
+const currentTab = ref<'all' | 'eligible' | 'rejected' | 'approved' | 'disapproved' | 'claims'>('all');
 const selectedParticipant = ref<Participant | null>(null);
+
+interface ClaimItem {
+  id: number;
+  tournamentId: number;
+  claimType: 'MISSING_LICHESS' | 'UNLISTED_REGISTERED';
+  telegramUsername: string;
+  chessComUser?: string;
+  lichessUser?: string;
+  notes?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  createdAt: string;
+}
+
+const claimsList = ref<ClaimItem[]>([]);
+const isFetchingClaims = ref(false);
+
+async function fetchClaims() {
+  try {
+    isFetchingClaims.value = true;
+    const res = await $fetch<{ success: boolean; claims: ClaimItem[] }>(`/api/tournaments/${props.tournamentId}/claims`);
+    if (res && res.success) {
+      claimsList.value = res.claims || [];
+    }
+  } catch (err) {
+    console.warn('Could not fetch claims:', err);
+  } finally {
+    isFetchingClaims.value = false;
+  }
+}
+
+async function handleUpdateClaimStatus(claimId: number, status: 'APPROVED' | 'REJECTED') {
+  try {
+    const res = await $fetch<{ success: boolean }>(`/api/claims/${claimId}/status`, {
+      method: 'PATCH',
+      body: { status },
+    });
+    if (res && res.success) {
+      addToast(
+        status === 'APPROVED' ? 'Claim Approved & Added!' : 'Claim Rejected',
+        status === 'APPROVED' ? 'Player added to official tournament roster.' : 'Claim marked as rejected.',
+        status === 'APPROVED' ? 'success' : 'info'
+      );
+      await fetchClaims();
+      await fetchTournamentDetails(props.tournamentId);
+    }
+  } catch (err: any) {
+    addToast('Action Failed', err.statusMessage || 'Could not update claim.', 'error');
+  }
+}
+
+onMounted(() => {
+  fetchClaims();
+});
 
 const sortColumn = ref<'telegram' | 'trust' | 'verdict' | 'status' | 'default'>('default');
 const sortDirection = ref<'asc' | 'desc'>('desc');

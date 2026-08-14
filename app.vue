@@ -1,20 +1,18 @@
 <template>
   <div class="app-root">
-    <Navbar />
-    <main class="app-container">
+    <NuxtLayout>
       <NuxtPage />
-    </main>
+    </NuxtLayout>
     <ToastNotification />
   </div>
 </template>
 
 <script setup lang="ts">
-import Navbar from '~/components/Navbar.vue';
 import ToastNotification from '~/components/ToastNotification.vue';
 </script>
 
 <style>
-/* Global Layout Styling */
+/* Global Layout Base */
 .app-root {
   min-height: 100vh;
   display: flex;

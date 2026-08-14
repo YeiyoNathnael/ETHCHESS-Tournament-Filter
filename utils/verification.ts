@@ -299,7 +299,7 @@ export function evaluateParticipant(
       evaluationFailed = false;
       isRescued = true;
       if (!rejectionReasons.some((r) => r.includes('Rescued by Trust Score'))) {
-        rejectionReasons.push(`🛡️ Rescued by Trust Score (${trustScore}/100 >= ${minScoreThreshold} threshold) despite rating/activity limits.`);
+        rejectionReasons.push(`Rescued by Trust Score (${trustScore}/100 >= ${minScoreThreshold} threshold) despite rating/activity limits.`);
       }
     } else if (!evaluationFailed && trustScore < minScoreThreshold) {
       // LOW TRUST REJECTION: Candidate passed raw ceilings, but statistical uncertainty/unreliability drops Trust Score below threshold.
