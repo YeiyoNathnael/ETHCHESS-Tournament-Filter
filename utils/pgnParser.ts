@@ -51,6 +51,31 @@ function normalizeHandle(handle?: string | null): string {
 }
 
 /**
+ * Determines the time format (blitz vs rapid vs bullet) of a PGN game from headers
+ */
+export function getGameTimeFormat(game: PgnGame): 'blitz' | 'rapid' | 'bullet' {
+  const event = (game.event || '').toLowerCase();
+  const timeControl = (game.headers.TimeControl || '').toLowerCase();
+
+  if (
+    event.includes('rapid') ||
+    timeControl.startsWith('600') ||
+    timeControl.startsWith('900') ||
+    timeControl.startsWith('1800') ||
+    timeControl.includes('10+0') ||
+    timeControl.includes('15+10')
+  ) {
+    return 'rapid';
+  }
+
+  if (event.includes('bullet') || timeControl.startsWith('60') || timeControl.startsWith('120')) {
+    return 'bullet';
+  }
+
+  return 'blitz';
+}
+
+/**
  * Parses raw PGN text into an array of PgnGame objects
  */
 export function parsePgnText(pgnText: string): PgnGame[] {
@@ -157,8 +182,9 @@ export function analyzeTournamentUpsets(
     const siteLower = (game.site || '').toLowerCase();
     const isLichessPgn = siteLower.includes('lichess') || (!siteLower.includes('chess.com') && !!pgnWinnerElo);
     const isChessComPgn = siteLower.includes('chess.com');
+    const gameTc = getGameTimeFormat(game);
 
-    // --- 1. Lichess Upset Calculation (Strict Lichess Ratings) ---
+    // --- 1. Lichess Upset Calculation ---
     const winnerLichessRating = winnerP?.lichessRating ?? winnerP?.lichessPeakRating ?? (isLichessPgn ? pgnWinnerElo : null);
     const loserLichessRating = loserP?.lichessRating ?? loserP?.lichessPeakRating ?? (isLichessPgn ? pgnLoserElo : null);
 
@@ -180,9 +206,19 @@ export function analyzeTournamentUpsets(
       });
     }
 
-    // --- 2. Chess.com (CDC) Upset Calculation (Strict Chess.com Ratings) ---
-    const winnerCdcRating = winnerP?.chessComRating ?? winnerP?.chessComPeakRating ?? (isChessComPgn ? pgnWinnerElo : null);
-    const loserCdcRating = loserP?.chessComRating ?? loserP?.chessComPeakRating ?? (isChessComPgn ? pgnLoserElo : null);
+    // --- 2. Chess.com (CDC) Upset Calculation ---
+    let winnerCdcRating: number | null = null;
+    let loserCdcRating: number | null = null;
+
+    if (isChessComPgn && gameTc === ratingMode && pgnWinnerElo && pgnLoserElo) {
+      // PGN contains explicit rating for this exact time format (blitz vs rapid)
+      winnerCdcRating = pgnWinnerElo;
+      loserCdcRating = pgnLoserElo;
+    } else {
+      // Otherwise use participant CDC profile rating if available
+      winnerCdcRating = winnerP?.chessComRating ?? winnerP?.chessComPeakRating ?? null;
+      loserCdcRating = loserP?.chessComRating ?? loserP?.chessComPeakRating ?? null;
+    }
 
     if (winnerCdcRating && loserCdcRating && loserCdcRating > winnerCdcRating) {
       const diff = loserCdcRating - winnerCdcRating;
