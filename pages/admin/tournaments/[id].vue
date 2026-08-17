@@ -19,6 +19,10 @@
           <ExternalLink :size="14" />
           <span>Preview Public Page</span>
         </NuxtLink>
+        <button class="btn btn-outline btn-sm" @click="showUpsetModal = true">
+          <Trophy :size="14" class="icon-jade" />
+          <span>Find Biggest Upsets</span>
+        </button>
         <button class="btn btn-primary btn-sm" @click="isDrawerOpen = true">
           <SlidersHorizontal :size="14" />
           <span>Tweak Qualification Rules</span>
@@ -342,6 +346,13 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Upset Finder Modal -->
+    <UpsetFinderModal
+      :is-open="showUpsetModal"
+      :participants="participants"
+      @close="showUpsetModal = false"
+    />
   </div>
 
   <div v-else class="not-found-page card">
@@ -358,6 +369,7 @@ import { useTournaments } from '~/composables/useTournaments';
 import { useToast } from '~/composables/useToast';
 import CsvUploader from '~/components/CsvUploader.vue';
 import ParticipantReviewer from '~/components/ParticipantReviewer.vue';
+import UpsetFinderModal from '~/components/UpsetFinderModal.vue';
 import {
   ArrowLeft,
   ExternalLink,
@@ -372,6 +384,7 @@ import {
   FileCheck,
   UploadCloud,
   Share2,
+  Trophy,
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -392,6 +405,7 @@ const participants = computed(() => getParticipants(tourneyId.value));
 
 const isDrawerOpen = ref(false);
 const isDeleteModalOpen = ref(false);
+const showUpsetModal = ref(false);
 const showCsvUploader = ref(false);
 const drawerTab = ref<'chessCom' | 'lichess'>('chessCom');
 
