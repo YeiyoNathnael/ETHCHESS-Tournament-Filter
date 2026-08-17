@@ -142,7 +142,8 @@
                         {{ item.winnerMatchedParticipant.telegramHandle }}
                       </div>
                       <div class="player-rating-chip winner-chip">
-                        <span>{{ item.winnerRating }} Blitz ELO</span>
+                        <span v-if="item.winnerRating">{{ item.winnerRating }} Blitz ELO</span>
+                        <span v-else class="text-missing">No {{ activeTab === 'lichess' ? 'Lichess' : 'CDC' }} Account*</span>
                       </div>
                     </div>
                   </div>
@@ -163,7 +164,8 @@
                         {{ item.loserMatchedParticipant.telegramHandle }}
                       </div>
                       <div class="player-rating-chip loser-chip">
-                        <span>{{ item.loserRating }} Blitz ELO</span>
+                        <span v-if="item.loserRating">{{ item.loserRating }} Blitz ELO</span>
+                        <span v-else class="text-missing">No {{ activeTab === 'lichess' ? 'Lichess' : 'CDC' }} Account*</span>
                       </div>
                     </div>
                   </div>

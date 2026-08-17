@@ -20,10 +20,12 @@ export interface UpsetEntry {
   rank: number;
   winnerHandle: string;
   winnerMatchedParticipant?: Participant;
-  winnerRating: number;
+  winnerRating: number | null;
+  winnerRatingNote?: string;
   loserHandle: string;
   loserMatchedParticipant?: Participant;
-  loserRating: number;
+  loserRating: number | null;
+  loserRatingNote?: string;
   ratingDiff: number;
   platform: 'lichess' | 'chessCom';
   game: PgnGame;
@@ -145,9 +147,13 @@ export function analyzeTournamentUpsets(games: PgnGame[], participants: Particip
     if (winnerP) matchedHandles.add(winnerP.id);
     if (loserP) matchedHandles.add(loserP.id);
 
-    // --- 1. Lichess Upset Calculation ---
-    const winnerLichessRating = winnerP?.lichessRating ?? winnerP?.lichessPeakRating ?? pgnWinnerElo;
-    const loserLichessRating = loserP?.lichessRating ?? loserP?.lichessPeakRating ?? pgnLoserElo;
+    const siteLower = (game.site || '').toLowerCase();
+    const isLichessPgn = siteLower.includes('lichess') || (!siteLower.includes('chess.com') && !!pgnWinnerElo);
+    const isChessComPgn = siteLower.includes('chess.com');
+
+    // --- 1. Lichess Upset Calculation (Strict Lichess Ratings) ---
+    const winnerLichessRating = winnerP?.lichessRating ?? winnerP?.lichessPeakRating ?? (isLichessPgn ? pgnWinnerElo : null);
+    const loserLichessRating = loserP?.lichessRating ?? loserP?.lichessPeakRating ?? (isLichessPgn ? pgnLoserElo : null);
 
     if (winnerLichessRating && loserLichessRating && loserLichessRating > winnerLichessRating) {
       const diff = loserLichessRating - winnerLichessRating;
@@ -166,9 +172,9 @@ export function analyzeTournamentUpsets(games: PgnGame[], participants: Particip
       });
     }
 
-    // --- 2. Chess.com (CDC) Upset Calculation ---
-    const winnerCdcRating = winnerP?.chessComRating ?? winnerP?.chessComPeakRating ?? pgnWinnerElo;
-    const loserCdcRating = loserP?.chessComRating ?? loserP?.chessComPeakRating ?? pgnLoserElo;
+    // --- 2. Chess.com (CDC) Upset Calculation (Strict Chess.com Ratings) ---
+    const winnerCdcRating = winnerP?.chessComRating ?? winnerP?.chessComPeakRating ?? (isChessComPgn ? pgnWinnerElo : null);
+    const loserCdcRating = loserP?.chessComRating ?? loserP?.chessComPeakRating ?? (isChessComPgn ? pgnLoserElo : null);
 
     if (winnerCdcRating && loserCdcRating && loserCdcRating > winnerCdcRating) {
       const diff = loserCdcRating - winnerCdcRating;
