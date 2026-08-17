@@ -62,19 +62,44 @@
 
         <!-- Results Display Section -->
         <div v-if="analysisResult" class="results-section">
-          <!-- Summary Bar -->
-          <div class="analysis-summary-bar">
-            <div class="summary-chip">
-              <Gamepad2 :size="15" class="icon-jade" />
-              <span><strong>{{ analysisResult.totalGamesParsed }}</strong> Games Parsed</span>
+          <!-- Summary & Rating Mode Bar -->
+          <div class="analysis-toolbar">
+            <div class="analysis-summary-bar">
+              <div class="summary-chip">
+                <Gamepad2 :size="15" class="icon-jade" />
+                <span><strong>{{ analysisResult.totalGamesParsed }}</strong> Games</span>
+              </div>
+              <div class="summary-chip">
+                <Swords :size="15" class="icon-jade" />
+                <span><strong>{{ analysisResult.decisiveGamesCount }}</strong> Decisive</span>
+              </div>
+              <div class="summary-chip">
+                <Users :size="15" class="icon-jade" />
+                <span><strong>{{ analysisResult.matchedPlayersCount }}</strong> Matched</span>
+              </div>
             </div>
-            <div class="summary-chip">
-              <Swords :size="15" class="icon-jade" />
-              <span><strong>{{ analysisResult.decisiveGamesCount }}</strong> Decisive Results</span>
-            </div>
-            <div class="summary-chip">
-              <Users :size="15" class="icon-jade" />
-              <span><strong>{{ analysisResult.matchedPlayersCount }}</strong> Players Matched</span>
+
+            <!-- Rating Mode Selector -->
+            <div class="rating-mode-selector">
+              <span class="mode-label">Mode:</span>
+              <div class="mode-btn-group">
+                <button
+                  class="mode-pill-btn"
+                  :class="{ active: ratingMode === 'blitz' }"
+                  @click="setRatingMode('blitz')"
+                >
+                  <Zap :size="13" />
+                  <span>Blitz</span>
+                </button>
+                <button
+                  class="mode-pill-btn"
+                  :class="{ active: ratingMode === 'rapid' }"
+                  @click="setRatingMode('rapid')"
+                >
+                  <Timer :size="13" />
+                  <span>Rapid</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -86,7 +111,7 @@
               @click="activeTab = 'lichess'"
             >
               <IconLichess :size="16" />
-              <span>Lichess Blitz Upsets ({{ analysisResult.lichessUpsets.length }})</span>
+              <span>Lichess {{ ratingMode === 'blitz' ? 'Blitz' : 'Rapid' }} Upsets ({{ analysisResult.lichessUpsets.length }})</span>
             </button>
 
             <button
@@ -95,7 +120,7 @@
               @click="activeTab = 'chessCom'"
             >
               <IconChessCom :size="16" />
-              <span>Chess.com / CDC Blitz Upsets ({{ analysisResult.chessComUpsets.length }})</span>
+              <span>Chess.com {{ ratingMode === 'blitz' ? 'Blitz' : 'Rapid' }} Upsets ({{ analysisResult.chessComUpsets.length }})</span>
             </button>
           </div>
 
@@ -103,7 +128,7 @@
           <div class="upset-list-container">
             <div v-if="currentUpsetList.length === 0" class="empty-upsets">
               <ShieldAlert :size="32" class="text-terracotta" />
-              <p>No lower-rated player upsets were found in the uploaded PGN for {{ activeTab === 'lichess' ? 'Lichess' : 'Chess.com' }} Blitz ratings.</p>
+              <p>No lower-rated player upsets were found in the uploaded PGN for {{ activeTab === 'lichess' ? 'Lichess' : 'Chess.com' }} {{ ratingMode === 'blitz' ? 'Blitz' : 'Rapid' }} ratings.</p>
             </div>
 
             <div v-else class="upset-cards-list">
@@ -116,7 +141,7 @@
 
                   <div class="upset-diff-badge">
                     <TrendingUp :size="14" />
-                    <span>+{{ item.ratingDiff }} Blitz ELO Upset!</span>
+                    <span>+{{ item.ratingDiff }} {{ ratingMode === 'blitz' ? 'Blitz' : 'Rapid' }} ELO Upset!</span>
                   </div>
 
                   <button
@@ -142,7 +167,7 @@
                         {{ item.winnerMatchedParticipant.telegramHandle }}
                       </div>
                       <div class="player-rating-chip winner-chip">
-                        <span v-if="item.winnerRating">{{ item.winnerRating }} Blitz ELO</span>
+                        <span v-if="item.winnerRating">{{ item.winnerRating }} {{ ratingMode === 'blitz' ? 'Blitz' : 'Rapid' }} ELO</span>
                         <span v-else class="text-missing">No {{ activeTab === 'lichess' ? 'Lichess' : 'CDC' }} Account*</span>
                       </div>
                     </div>
@@ -164,7 +189,7 @@
                         {{ item.loserMatchedParticipant.telegramHandle }}
                       </div>
                       <div class="player-rating-chip loser-chip">
-                        <span v-if="item.loserRating">{{ item.loserRating }} Blitz ELO</span>
+                        <span v-if="item.loserRating">{{ item.loserRating }} {{ ratingMode === 'blitz' ? 'Blitz' : 'Rapid' }} ELO</span>
                         <span v-else class="text-missing">No {{ activeTab === 'lichess' ? 'Lichess' : 'CDC' }} Account*</span>
                       </div>
                     </div>
@@ -194,7 +219,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import type { Participant } from '~/types/tournament';
-import { parsePgnText, analyzeTournamentUpsets, type UpsetAnalysisResult, type UpsetEntry } from '~/utils/pgnParser';
+import { parsePgnText, analyzeTournamentUpsets, type UpsetAnalysisResult, type UpsetEntry, type RatingMode } from '~/utils/pgnParser';
 import { useToast } from '~/composables/useToast';
 import IconChessCom from '~/components/icons/IconChessCom.vue';
 import IconLichess from '~/components/icons/IconLichess.vue';
@@ -213,6 +238,7 @@ import {
   ShieldOff,
   Copy,
   ShieldAlert,
+  Timer,
 } from 'lucide-vue-next';
 
 const props = defineProps<{
@@ -230,9 +256,17 @@ const fileInputRef = ref<HTMLInputElement | null>(null);
 const pgnTextInput = ref('');
 const isDragging = ref(false);
 const isAnalyzing = ref(false);
+const ratingMode = ref<RatingMode>('blitz');
 const analysisResult = ref<UpsetAnalysisResult | null>(null);
 const activeTab = ref<'lichess' | 'chessCom'>('lichess');
 const expandedGameId = ref<string | null>(null);
+
+function setRatingMode(mode: RatingMode) {
+  ratingMode.value = mode;
+  if (pgnTextInput.value.trim()) {
+    runAnalysis();
+  }
+}
 
 const currentUpsetList = computed<UpsetEntry[]>(() => {
   if (!analysisResult.value) return [];
@@ -284,7 +318,7 @@ function runAnalysis() {
   isAnalyzing.value = true;
   try {
     const games = parsePgnText(pgnTextInput.value);
-    const result = analyzeTournamentUpsets(games, props.participants);
+    const result = analyzeTournamentUpsets(games, props.participants, ratingMode.value);
     analysisResult.value = result;
 
     if (result.lichessUpsets.length === 0 && result.chessComUpsets.length > 0) {
@@ -559,15 +593,64 @@ function copyGamePgn(item: UpsetEntry) {
   background: #f0f0f0;
 }
 
+.analysis-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
 .analysis-summary-bar {
   display: flex;
   gap: 0.8rem;
   flex-wrap: wrap;
-  padding: 0.8rem 1rem;
+  padding: 0.6rem 1rem;
   background: #faf7f2;
   border-radius: 10px;
   border: 1px solid rgba(15, 82, 87, 0.1);
+}
 
+.rating-mode-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mode-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.mode-btn-group {
+  display: flex;
+  background: #faf7f2;
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 82, 87, 0.15);
+}
+
+.mode-pill-btn {
+  background: transparent;
+  border: none;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #666;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mode-pill-btn.active {
+  background: var(--color-jade-deep, #0f5257);
+  color: #ffffff;
 }
 
 .summary-chip {

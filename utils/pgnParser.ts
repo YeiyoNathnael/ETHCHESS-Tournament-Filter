@@ -15,6 +15,8 @@ export interface PgnGame {
   movesText: string;
 }
 
+export type RatingMode = 'blitz' | 'rapid';
+
 export interface UpsetEntry {
   id: string;
   rank: number;
@@ -28,6 +30,7 @@ export interface UpsetEntry {
   loserRatingNote?: string;
   ratingDiff: number;
   platform: 'lichess' | 'chessCom';
+  ratingMode: RatingMode;
   game: PgnGame;
 }
 
@@ -121,7 +124,11 @@ export function findParticipantByHandle(handle: string, participants: Participan
 /**
  * Analyzes PGN games and returns 2 sorted arrays of upsets: Lichess & Chess.com (CDC)
  */
-export function analyzeTournamentUpsets(games: PgnGame[], participants: Participant[]): UpsetAnalysisResult {
+export function analyzeTournamentUpsets(
+  games: PgnGame[],
+  participants: Participant[],
+  ratingMode: RatingMode = 'blitz'
+): UpsetAnalysisResult {
   const lichessUpsets: UpsetEntry[] = [];
   const chessComUpsets: UpsetEntry[] = [];
   const matchedHandles = new Set<string>();
@@ -168,6 +175,7 @@ export function analyzeTournamentUpsets(games: PgnGame[], participants: Particip
         loserRating: loserLichessRating,
         ratingDiff: diff,
         platform: 'lichess',
+        ratingMode,
         game,
       });
     }
@@ -189,6 +197,7 @@ export function analyzeTournamentUpsets(games: PgnGame[], participants: Particip
         loserRating: loserCdcRating,
         ratingDiff: diff,
         platform: 'chessCom',
+        ratingMode,
         game,
       });
     }
