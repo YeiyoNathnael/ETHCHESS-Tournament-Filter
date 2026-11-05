@@ -50,3 +50,7 @@ coverage/
 .netlify
 api-1.json
 local.db
+
+# Registration data
+*.csv
+scratch/

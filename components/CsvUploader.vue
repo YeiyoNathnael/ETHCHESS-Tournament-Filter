@@ -7,18 +7,9 @@
           Participant Intake & CSV Verification
         </h3>
         <p class="card-subtitle">
-          Upload registration responses or load default ETHCHESS form submission CSV to evaluate eligibility.
+          Upload registration responses to evaluate eligibility.
         </p>
       </div>
-
-      <button
-        class="btn btn-secondary btn-default-csv"
-        :disabled="isProcessing || isVerifying"
-        @click="handleLoadDefaultCsv"
-      >
-        <Sparkles :size="16" />
-        <span>Load Default Form Responses (ETHCHESS U1500)</span>
-      </button>
     </div>
 
     <!-- Drag & Drop Zone -->
@@ -82,7 +73,7 @@ import { ref, computed } from 'vue';
 import { useTournaments } from '~/composables/useTournaments';
 import { useToast } from '~/composables/useToast';
 import { parseCsvContent } from '~/utils/csvParser';
-import { FileSpreadsheet, Sparkles, UploadCloud, Loader2, CheckCircle2 } from 'lucide-vue-next';
+import { FileSpreadsheet, UploadCloud, Loader2, CheckCircle2 } from 'lucide-vue-next';
 
 const props = defineProps<{
   tournamentId: string;
@@ -92,7 +83,7 @@ const emit = defineEmits<{
   (e: 'parsed', count: number): void;
 }>();
 
-const { getTournament, setParticipants, loadDefaultCsvData, processCsvFile, verifyAllParticipants } = useTournaments();
+const { getTournament, setParticipants, processCsvFile, verifyAllParticipants } = useTournaments();
 const { addToast } = useToast();
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -177,59 +168,6 @@ async function processFile(file: File) {
   }
 }
 
-async function handleLoadDefaultCsv() {
-  isProcessing.value = true;
-  filenameLoaded.value = 'ETHCHESS_Club_Under_1500_Tournament_Responses_Form_Responses_1.csv';
-
-  try {
-    let csvText = '';
-    try {
-      const res = await fetch('/ETHCHESS_Club_Under_1500_Tournament_Responses_Form_Responses_1.csv');
-      if (res.ok) {
-        csvText = await res.text();
-      }
-    } catch {
-      // Fallback
-    }
-
-    addToast(
-      'Processing Default CSV',
-      `Parsing default form responses, querying platform APIs, and evaluating Trust Scores...`,
-      'info'
-    );
-
-    // Server-side processing & DB ingestion (locks UI until finished)
-    const serverMapped = await processCsvFile(props.tournamentId, csvText || undefined as any);
-    if (serverMapped && serverMapped.length > 0) {
-      emit('parsed', serverMapped.length);
-      addToast('Default CSV Loaded', `Loaded & verified ${serverMapped.length} form submissions.`, 'success');
-      return;
-    }
-
-    // Fallback client load:
-    const parsed = loadDefaultCsvData(props.tournamentId, csvText || undefined);
-    emit('parsed', parsed.length);
-
-    if (parsed.length > 0) {
-      isProcessing.value = false;
-      isVerifying.value = true;
-      progressTotal.value = parsed.length;
-      progressCompleted.value = 0;
-
-      await verifyAllParticipants(props.tournamentId, (completed, total) => {
-        progressCompleted.value = completed;
-        progressTotal.value = total;
-      });
-    }
-
-    addToast('Verification Complete', 'Ratings, account ages, and Trust Scores verified live.', 'info');
-  } catch (err: any) {
-    addToast('Error', err?.message || 'Could not load default CSV', 'error');
-  } finally {
-    isProcessing.value = false;
-    isVerifying.value = false;
-  }
-}
 </script>
 
 <style scoped>
@@ -239,10 +177,6 @@ async function handleLoadDefaultCsv() {
   align-items: flex-start;
   flex-wrap: wrap;
   gap: 1rem;
-}
-
-.btn-default-csv {
-  box-shadow: 0 4px 12px rgba(217, 107, 67, 0.25);
 }
 
 .dropzone {

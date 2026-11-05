@@ -3,7 +3,6 @@ import type { Tournament, Participant, QualificationRules, ParticipantStatus, Ti
 import { parseCsvContent } from '~/utils/csvParser';
 import { evaluateParticipant, verifyParticipantLive } from '~/utils/verification';
 
-const defaultCSVRaw = "";
 
 const defaultRules: QualificationRules = {
   chessComMaxRating: 1500,
@@ -295,15 +294,6 @@ export function useTournaments() {
     return parsed;
   };
 
-  const loadDefaultCsvData = (tournamentId: string, rawCsvText?: string): Participant[] => {
-    const tourney = getTournament(tournamentId);
-    const rules = tourney?.rules || defaultRules;
-    const timeControl = tourney?.timeControl || 'Rapid';
-    const csvContent = rawCsvText || defaultCSVRaw;
-    const parsed = parseCsvContent(csvContent, tournamentId, rules, timeControl);
-    participantsMap.value[tournamentId] = parsed;
-    return parsed;
-  };
 
   const verifyAllParticipants = async (
     tournamentId: string,
@@ -393,7 +383,6 @@ export function useTournaments() {
     updateParticipantStatus,
     deleteParticipant,
     purgeRejectedParticipants,
-    loadDefaultCsvData,
     verifyAllParticipants,
     defaultRules,
   };
